@@ -1,41 +1,45 @@
-seed: 7
-run_name: toy
+seed: 11
+run_name: arche_like_coarse_to_fine
 
 data:
-  dataset: toy
-  tokenizer: simple
-  seq_len: 24
+  dataset: arche_like
+  tokenizer: gpt2
+  path: data/training_mix.txt
+  seq_len: 32
   batch_size: 4
   val_fraction: 0.2
-  max_chunks: 64
+  max_examples: 128
+  max_chunks: 96
 
 coarse_space:
-  token_dim: 64
-  coarse_dim: 32
+  token_dim: 96
+  coarse_dim: 64
   compression_method: linear
   segment_size: 2
 
 diffusion:
   mask_prob_min: 0.15
-  mask_prob_max: 0.65
+  mask_prob_max: 0.70
   sampling_steps: 4
-  device_steps: 2
+  device_steps: 4
   edge_steps: 2
 
 training:
-  steps: 8
-  lr: 0.05
+  steps: 10
+  lr: 0.04
+  device_lr: 0.04
+  edge_lr: 0.04
   weight_decay: 0.0
-  eval_batches: 2
+  eval_batches: 3
 
 device_model:
-  hidden_size: 48
+  hidden_size: 64
   num_layers: 1
   num_heads: 4
 
 edge_model:
-  hidden_size: 72
-  num_layers: 1
+  hidden_size: 96
+  num_layers: 2
   num_heads: 4
   conditioning: adapter
 
@@ -43,14 +47,14 @@ collaboration:
   lambda_align: 0.2
   lambda_distill: 0.2
   temperature: 2.0
-  top_k_tokens: 12
+  top_k_tokens: 16
 
 ablation:
   coarse_dims: [32, 64, 128]
   compression_methods: [linear, pooling]
   device_steps: [2, 4, 8]
   edge_steps: [1, 2, 4]
-  max_runs: 4
+  max_runs: 6
 
 outputs:
   dir: results

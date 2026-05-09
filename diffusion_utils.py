@@ -1,122 +1,127 @@
-"""Masked diffusion corruption, losses, and simple denoising sampling."""
+"""Masked diffusion corruption, sampling, and text metrics."""
 
 from __future__ import annotations
 
+import math
 import time
-from typing import Dict
+from collections import Counter
+from typing import Dict, Tuple
 
-import torch
-import torch.nn.functional as F
+import numpy as np
 
 
-def sample_noise_prob(batch_size: int, config: dict, device: torch.device) -> torch.Tensor:
+def softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    x = x - np.max(x, axis=axis, keepdims=True)
+    exp = np.exp(x)
+    return exp / np.maximum(exp.sum(axis=axis, keepdims=True), 1e-12)
+
+
+def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    probs = softmax(x, axis=axis)
+    return np.log(np.maximum(probs, 1e-12))
+
+
+def sample_noise_prob(batch_size: int, config: dict, rng: np.random.Generator) -> np.ndarray:
     low = float(config["diffusion"].get("mask_prob_min", 0.15))
     high = float(config["diffusion"].get("mask_prob_max", 0.65))
-    return torch.empty(batch_size, device=device).uniform_(low, high)
+    return rng.uniform(low, high, size=(batch_size,)).astype(np.float32)
 
 
 def corrupt_tokens(
-    clean_ids: torch.Tensor,
+    clean_ids: np.ndarray,
     mask_token_id: int,
     pad_token_id: int,
-    noise_prob: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Mask tokens with per-example probabilities; never mask padding."""
-    prob = noise_prob[:, None].expand_as(clean_ids)
-    mask = (torch.rand_like(clean_ids.float()) < prob) & clean_ids.ne(pad_token_id)
-    corrupted = clean_ids.clone()
-    corrupted[mask] = mask_token_id
-    # Ensure every sequence contributes at least one denoising target.
-    for row in range(clean_ids.size(0)):
-        if not mask[row].any():
-            valid = clean_ids[row].ne(pad_token_id).nonzero(as_tuple=False).flatten()
-            if valid.numel() > 0:
-                pos = valid[torch.randint(valid.numel(), (1,), device=clean_ids.device)]
-                mask[row, pos] = True
+    noise_prob: np.ndarray,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, np.ndarray]:
+    prob = noise_prob[:, None]
+    target_mask = (rng.random(clean_ids.shape) < prob) & (clean_ids != pad_token_id)
+    corrupted = clean_ids.copy()
+    corrupted[target_mask] = mask_token_id
+    for row in range(clean_ids.shape[0]):
+        if not target_mask[row].any():
+            valid = np.where(clean_ids[row] != pad_token_id)[0]
+            if len(valid):
+                pos = rng.choice(valid)
+                target_mask[row, pos] = True
                 corrupted[row, pos] = mask_token_id
-    return corrupted, mask
+    return corrupted, target_mask
 
 
-def denoising_loss(
-    logits: torch.Tensor,
-    clean_ids: torch.Tensor,
-    target_mask: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Cross entropy on corrupted token positions only."""
-    per_token = F.cross_entropy(
-        logits.reshape(-1, logits.size(-1)),
-        clean_ids.reshape(-1),
-        reduction="none",
-    ).view_as(clean_ids)
-    denom = target_mask.sum().clamp_min(1)
-    return (per_token * target_mask.float()).sum() / denom, per_token.detach()
+def cross_entropy_and_grad(logits: np.ndarray, targets: np.ndarray, target_mask: np.ndarray):
+    probs = softmax(logits, axis=-1)
+    flat_mask = target_mask.reshape(-1)
+    flat_targets = targets.reshape(-1)
+    flat_probs = probs.reshape(-1, probs.shape[-1])
+    idx = np.where(flat_mask)[0]
+    if len(idx) == 0:
+        return 0.0, np.zeros_like(logits), 0.0
+    chosen = flat_probs[idx, flat_targets[idx]]
+    loss = float(-np.log(np.maximum(chosen, 1e-12)).mean())
+    grad = np.zeros_like(flat_probs)
+    grad[idx] = flat_probs[idx]
+    grad[idx, flat_targets[idx]] -= 1.0
+    grad[idx] /= len(idx)
+    pred = flat_probs[idx].argmax(axis=-1)
+    acc = float((pred == flat_targets[idx]).mean())
+    return loss, grad.reshape(logits.shape), acc
 
 
-@torch.no_grad()
-def token_recovery_accuracy(logits: torch.Tensor, clean_ids: torch.Tensor, target_mask: torch.Tensor) -> float:
-    denom = int(target_mask.sum().item())
+def token_recovery_accuracy(logits: np.ndarray, clean_ids: np.ndarray, target_mask: np.ndarray) -> float:
+    denom = int(target_mask.sum())
     if denom == 0:
         return 0.0
-    pred = logits.argmax(dim=-1)
-    correct = (pred.eq(clean_ids) & target_mask).sum().item()
-    return correct / denom
+    pred = logits.argmax(axis=-1)
+    return float(((pred == clean_ids) & target_mask).sum() / denom)
 
 
-@torch.no_grad()
-def evaluate_denoising(model, loader, config: dict, tokenizer, device: torch.device, max_batches: int = 4) -> Dict[str, float]:
-    model.eval()
-    total_loss = 0.0
-    total_correct = 0
-    total_targets = 0
-    batches = 0
-    for clean_ids in loader:
-        clean_ids = clean_ids.to(device)
-        noise_prob = sample_noise_prob(clean_ids.size(0), config, device)
-        corrupted, target_mask = corrupt_tokens(
-            clean_ids,
-            tokenizer.mask_token_id,
-            tokenizer.pad_token_id,
-            noise_prob,
-        )
-        logits = model(corrupted, noise_prob)
-        loss, _ = denoising_loss(logits, clean_ids, target_mask)
-        pred = logits.argmax(dim=-1)
-        total_loss += float(loss.item())
-        total_correct += int((pred.eq(clean_ids) & target_mask).sum().item())
-        total_targets += int(target_mask.sum().item())
-        batches += 1
-        if batches >= max_batches:
-            break
-    return {
-        "val_loss": total_loss / max(batches, 1),
-        "token_acc": total_correct / max(total_targets, 1),
-    }
+def perplexity_surrogate(loss: float) -> float:
+    return float(math.exp(min(20.0, max(0.0, loss))))
 
 
-@torch.no_grad()
-def measure_sampling(model, config: dict, tokenizer, device: torch.device) -> Dict[str, float]:
-    """Measure iterative masked-token generation latency from an all-mask prompt."""
-    model.eval()
-    seq_len = int(config["data"]["seq_len"])
-    steps = int(config["diffusion"].get("sampling_steps", 8))
-    x = torch.full((1, seq_len), tokenizer.mask_token_id, dtype=torch.long, device=device)
+def iterative_sample(
+    forward_fn,
+    seq_len: int,
+    mask_token_id: int,
+    steps: int,
+    rng: np.random.Generator,
+    temperature: float = 0.9,
+) -> Tuple[np.ndarray, float]:
+    x = np.full((1, seq_len), mask_token_id, dtype=np.int64)
     start = time.perf_counter()
-    for idx in range(steps):
-        noise_prob = torch.full((1,), max(0.01, 1.0 - idx / max(steps, 1)), device=device)
-        logits = model(x, noise_prob)
-        probs = logits.softmax(dim=-1)
-        confidence, pred = probs.max(dim=-1)
-        masked = x.eq(tokenizer.mask_token_id)
-        if masked.any():
-            scores = confidence.masked_fill(~masked, -1.0)
-            reveal = max(1, int(masked.sum().item() / max(steps - idx, 1)))
-            flat_pos = scores.view(-1).topk(min(reveal, int(masked.sum().item()))).indices
-            x.view(-1)[flat_pos] = pred.view(-1)[flat_pos]
-    latency = time.perf_counter() - start
-    tokens = seq_len
-    return {
-        "sampling_latency": latency,
-        "tokens_per_sec": tokens / max(latency, 1e-9),
-        "denoising_steps": steps,
-    }
+    for step in range(max(1, steps)):
+        t = np.asarray([1.0 - step / max(steps, 1)], dtype=np.float32)
+        logits = forward_fn(x, t)
+        probs = softmax(logits / max(temperature, 1e-4), axis=-1)
+        confidence = probs.max(axis=-1)
+        pred = probs.argmax(axis=-1)
+        masked = x == mask_token_id
+        if not masked.any():
+            break
+        reveal = max(1, int(masked.sum() / max(steps - step, 1)))
+        scores = np.where(masked, confidence, -1.0).reshape(-1)
+        pos = np.argpartition(-scores, min(reveal, len(scores) - 1))[:reveal]
+        x.reshape(-1)[pos] = pred.reshape(-1)[pos]
+    return x[0], time.perf_counter() - start
 
+
+def distinct_and_repetition(ids: np.ndarray) -> Dict[str, float]:
+    toks = [int(x) for x in ids.tolist()]
+    if not toks:
+        return {"distinct_1": 0.0, "distinct_2": 0.0, "repetition_2": 0.0, "repetition_3": 0.0}
+
+    def distinct(n: int) -> float:
+        grams = [tuple(toks[i : i + n]) for i in range(len(toks) - n + 1)]
+        return len(set(grams)) / max(len(grams), 1)
+
+    def repetition(n: int) -> float:
+        grams = [tuple(toks[i : i + n]) for i in range(len(toks) - n + 1)]
+        counts = Counter(grams)
+        return sum(1 for c in counts.values() if c > 1) / max(len(counts), 1)
+
+    return {
+        "distinct_1": distinct(1),
+        "distinct_2": distinct(2),
+        "repetition_2": repetition(2),
+        "repetition_3": repetition(3),
+    }

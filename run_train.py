@@ -1,18 +1,13 @@
-"""CLI entry point for training one experimental mode."""
+"""CLI entry point for one coarse-to-fine experiment mode."""
 
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
 
 import yaml
 
-if __package__ is None or __package__ == "":
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from edge_device_training.metrics import format_table, load_results
-from edge_device_training.trainer import ExperimentTrainer
+from metrics import format_table, load_results
+from trainer import ExperimentTrainer
 
 
 def load_config(path: str) -> dict:
@@ -21,19 +16,20 @@ def load_config(path: str) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train an edge-device diffusion LM prototype.")
+    parser = argparse.ArgumentParser(description="Train a coarse-to-fine edge-device diffusion LM demo.")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--mode", choices=["device_only", "edge_only", "collaborative"], required=True)
+    parser.add_argument(
+        "--mode",
+        choices=["device_only", "edge_only", "vanilla_collaborative_distillation", "coarse_to_fine", "collaborative"],
+        required=True,
+    )
     args = parser.parse_args()
-
     config = load_config(args.config)
-    trainer = ExperimentTrainer(config, args.mode)
-    result = trainer.train()
-    print(f"finished mode={args.mode}")
+    result = ExperimentTrainer(config, args.mode).train()
+    print(f"finished mode={result['mode']}")
     print(format_table(load_results(config["outputs"]["dir"])))
-    print(f"latest train_loss={result['train_loss']:.4f} val_loss={result['val_loss']:.4f}")
+    print(f"latest token_acc={result['token_acc']:.4f} val_loss={result['val_loss']:.4f}")
 
 
 if __name__ == "__main__":
     main()
-
