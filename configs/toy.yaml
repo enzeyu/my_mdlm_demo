@@ -1,0 +1,46 @@
+seed: 7
+device: auto
+run_name: toy
+
+data:
+  dataset: toy
+  tokenizer: simple
+  seq_len: 24
+  batch_size: 4
+  val_fraction: 0.2
+
+diffusion:
+  mask_prob_min: 0.15
+  mask_prob_max: 0.65
+  sampling_steps: 8
+
+training:
+  steps: 40
+  lr: 0.001
+  weight_decay: 0.01
+  log_interval: 10
+  eval_batches: 4
+
+device_model:
+  hidden_size: 48
+  num_layers: 1
+  num_heads: 4
+  dropout: 0.1
+
+edge_model:
+  hidden_size: 96
+  num_layers: 2
+  num_heads: 4
+  dropout: 0.1
+
+collaboration:
+  sync_interval: 5
+  kd_weight: 0.6
+  temperature: 2.0
+  selection: entropy
+  top_k_tokens: 12
+  min_confidence: 0.45
+
+outputs:
+  dir: edge_device_training/results
+
