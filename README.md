@@ -1,108 +1,94 @@
-# Coarse-to-Fine Edge-Device Diffusion LM Demo
+# Coarse-to-Fine Edge-Device Diffusion LM Prototype
 
-This repository is a runnable research prototype for coarse-to-fine collaborative
-masked diffusion language modeling. It keeps the code lightweight enough to run
-in a CPU-only environment, while following the organization of the Arche MDLM
-baseline: real-text dataset hooks, GPT-2 tokenizer support, masked denoising
-training, confidence-based iterative generation, baseline comparisons, and CSV
-/ JSON experiment tables.
+This is a minimal real PyTorch experiment for coarse-to-fine masked diffusion
+language modeling. It trains on WikiText-2 with a GPT-2 tokenizer and runs on
+CUDA automatically when available.
 
-## Method
+## Idea
 
-The generation process is split into two spaces:
+The device model is a small Transformer masked diffusion LM. It receives a
+masked token sequence and emits:
 
-1. The device model denoises a low-dimensional coarse semantic representation.
-2. The edge model receives that coarse representation and refines masked tokens
-   in fine-grained token space.
+- low-dimensional `coarse representation`
+- optional device token logits for the `device_only` baseline
 
-This targets the main bottleneck on resource-limited devices: not only many
-diffusion steps, but high per-step hidden-state compute, memory traffic, and
-state storage. The prototype measures whether sending compact coarse semantics
-can reduce device-side cost while preserving enough information for edge
-refinement.
+The edge model is a larger Transformer masked diffusion LM. It receives the same
+masked token sequence and optionally adds a projected coarse representation into
+its token hidden states before refinement.
+
+The main research question is:
+
+> Can a low-dimensional coarse representation reduce communication while
+> preserving or improving token-level denoising quality after edge refinement?
 
 ## Files
 
-- `data.py`: arche-like dataset loader with TinyStories / WikiText-2 / local
-  file hooks and automatic fallback to a small real-text corpus.
-- `coarse_space.py`: linear, segment pooling, and placeholder VQ coarse semantic
-  spaces.
-- `coarse_device_model.py`: small Transformer-style coarse denoiser.
-- `fine_edge_model.py`: larger bidirectional masked token refiner with coarse
-  adapter conditioning.
-- `collaboration.py`: coarse transfer and distillation communication accounting.
-- `trainer.py`: `device_only`, `edge_only`, `vanilla_collaborative_distillation`,
-  and `coarse_to_fine` training/evaluation.
-- `run_ablation.py`: automated baseline and coarse-space ablations.
+- `configs/wikitext2_coarse.yaml`: default runnable experiment config.
+- `data_real.py`: WikiText-2 loading, GPT-2 tokenizer, fixed-length token blocks,
+  and masked diffusion corruption.
+- `model_coarse_to_fine.py`: device Transformer, edge Transformer, coarse
+  conditioning, losses, and communication-size helpers.
+- `train_coarse_to_fine.py`: CUDA-aware training script.
+- `eval_coarse_to_fine.py`: evaluates `device_only`, `edge_only`, and
+  `coarse_to_fine`.
+- `metrics.py`: metric saving and table formatting.
 
-## Training Objective
-
-The implemented objective is:
-
-```text
-L = L_device_coarse + L_edge_fine + lambda_align * L_align + lambda_distill * L_distill
-```
-
-The first version uses direct parameter updates for lightweight NumPy modules:
-
-- `L_device_coarse`: MSE between predicted and clean coarse representations.
-- `L_edge_fine`: masked-token cross entropy for edge refinement.
-- `L_align`: MSE alignment between device coarse output and clean coarse target.
-- `L_distill`: optional KL from edge logits to device coarse-token logits.
-
-## Run
+## Train
 
 ```bash
-python run_train.py --config configs/arche_like.yaml --mode coarse_to_fine
-python run_eval.py --config configs/arche_like.yaml
-python run_ablation.py --config configs/arche_like.yaml
+python train_coarse_to_fine.py --config configs/wikitext2_coarse.yaml
 ```
 
-Other modes:
+The script prints:
+
+- training loss
+- edge token loss
+- device token loss
+- coarse alignment loss
+- masked token accuracy
+- step time
+- GPU memory
+
+It saves:
+
+- `results/wikitext2_coarse/checkpoint.pt`
+- `results/wikitext2_coarse/train_metrics.csv`
+- `results/wikitext2_coarse/train_metrics.json`
+- `results/wikitext2_coarse/train_metrics.jsonl`
+
+## Evaluate
 
 ```bash
-python run_train.py --config configs/arche_like.yaml --mode device_only
-python run_train.py --config configs/arche_like.yaml --mode edge_only
-python run_train.py --config configs/arche_like.yaml --mode vanilla_collaborative_distillation
+python eval_coarse_to_fine.py --config configs/wikitext2_coarse.yaml
 ```
 
-Results are saved to:
+Or with an explicit checkpoint:
 
-- `results/coarse_to_fine_results.csv`
-- `results/coarse_to_fine_results.json`
+```bash
+python eval_coarse_to_fine.py \
+  --config configs/wikitext2_coarse.yaml \
+  --ckpt results/wikitext2_coarse/checkpoint.pt
+```
 
 ## Metrics
 
-The CSV table includes:
+- `validation_loss`: masked-token cross entropy on validation batches.
+- `masked_token_accuracy`: accuracy only on tokens corrupted by `[MASK]`.
+- `denoising_accuracy`: same as masked-token accuracy in this minimal prototype.
+- `refinement_latency`: average forward/loss latency per validation batch.
+- `tokens_per_sec`: masked denoising targets processed per second.
+- `gpu_memory_MB`: peak allocated CUDA memory.
+- `coarse_comm_MB`: size of transmitted coarse representation per batch.
+- `compression_ratio`: edge hidden size divided by coarse dimension.
+- `refinement_gain_over_device_only`: accuracy improvement over device-only.
 
-```text
-mode,dataset,coarse_dim,compression_method,device_steps,edge_steps,
-train_time,step_time,memory_MB,comm_MB,sampling_latency,tokens_per_sec,
-token_acc,val_loss,compression_ratio,refinement_gain
-```
+## Next Research Extensions
 
-The JSON rows also include parameter counts, approximate FLOPs, device/edge
-generation time, coarse representation bytes, hidden-state baseline bytes,
-communication per batch, communication per generated sequence, masked token
-accuracy, perplexity-like surrogate, alignment loss, distinct-n, and repetition
-rates.
-
-## Research Questions
-
-1. How should the coarse representation space be designed: linear projection,
-   segment pooling, learned codebook, or another semantic bottleneck?
-2. How should a heterogeneous edge model consume coarse semantics: adapter
-   addition, cross-attention, or a stronger refinement interface?
-3. What coarse dimension gives the best quality/communication trade-off?
-4. Can coarse-to-fine collaboration reduce device training and generation cost
-   while keeping token recovery quality acceptable?
-5. Is there a Pareto frontier between communication, latency, memory, and
-   generation quality that can be optimized for edge deployment?
-
-## Notes
-
-This is a first runnable prototype, not a SOTA implementation. The code avoids
-PyTorch because the current environment does not provide it. The model classes
-still preserve the intended research structure: device-side coarse denoising,
-edge-side token refinement, coarse-to-fine conditioning, baseline organization,
-and metrics needed for follow-up experiments.
+1. Replace additive conditioning with cross-attention or prefix tokens.
+2. Sweep `coarse_dim` over 32/64/128 and report quality/communication Pareto
+   curves.
+3. Add iterative MDLM sampling schedules instead of single-step denoising eval.
+4. Pretrain or freeze a stronger edge model to study whether coarse semantics
+   transfer across heterogeneous model sizes.
+5. Compare against transmitting edge hidden states, logits, or selected token
+   positions under equal communication budgets.

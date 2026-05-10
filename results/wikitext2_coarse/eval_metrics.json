@@ -1,0 +1,38 @@
+[
+  {
+    "mode": "device_only",
+    "validation_loss": 7.858073875308037,
+    "masked_token_accuracy": 0.04649671848164871,
+    "denoising_accuracy": 0.04649671848164871,
+    "refinement_latency": 0.004718008309282595,
+    "tokens_per_sec": 64791.64087069652,
+    "gpu_memory_MB": 1312.46630859375,
+    "coarse_comm_MB": 0.0,
+    "compression_ratio": 6.0,
+    "refinement_gain_over_device_only": 0.0
+  },
+  {
+    "mode": "edge_only",
+    "validation_loss": 7.860503986477852,
+    "masked_token_accuracy": 0.049168089870363474,
+    "denoising_accuracy": 0.049168089870363474,
+    "refinement_latency": 0.00601978804479586,
+    "tokens_per_sec": 50723.33904911675,
+    "gpu_memory_MB": 1708.46630859375,
+    "coarse_comm_MB": 0.0,
+    "compression_ratio": 6.0,
+    "refinement_gain_over_device_only": 0.0026713713887147605
+  },
+  {
+    "mode": "coarse_to_fine",
+    "validation_loss": 7.864141717553139,
+    "masked_token_accuracy": 0.05022261990234256,
+    "denoising_accuracy": 0.05022261990234256,
+    "refinement_latency": 0.005976212843961548,
+    "tokens_per_sec": 50591.19510870375,
+    "gpu_memory_MB": 1708.46630859375,
+    "coarse_comm_MB": 0.25,
+    "compression_ratio": 6.0,
+    "refinement_gain_over_device_only": 0.0037259014206938446
+  }
+]

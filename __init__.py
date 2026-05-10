@@ -1,2 +1,1 @@
-"""Edge-device collaborative training prototype for masked diffusion LMs."""
-
+"""Coarse-to-fine masked diffusion language model prototype."""

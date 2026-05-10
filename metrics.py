@@ -1,91 +1,88 @@
-"""Metric aggregation and result persistence."""
+"""Metric helpers for the real PyTorch coarse-to-fine prototype."""
 
 from __future__ import annotations
 
 import csv
 import json
+import time
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-
-RESULT_FIELDS = [
-    "mode",
-    "dataset",
-    "coarse_dim",
-    "compression_method",
-    "device_steps",
-    "edge_steps",
-    "train_time",
-    "step_time",
-    "memory_MB",
-    "comm_MB",
-    "sampling_latency",
-    "tokens_per_sec",
-    "token_acc",
-    "val_loss",
-    "compression_ratio",
-    "refinement_gain",
-]
+import torch
 
 
-def write_results(results: List[Dict[str, float]], output_dir: str, stem: str = "coarse_to_fine_results") -> None:
-    path = Path(output_dir)
-    path.mkdir(parents=True, exist_ok=True)
-    json_path = path / f"{stem}.json"
-    csv_path = path / f"{stem}.csv"
-    json_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=RESULT_FIELDS)
+def now() -> float:
+    """Return a high-resolution timestamp for latency measurement."""
+    return time.perf_counter()
+
+
+def gpu_memory_mb(device: torch.device) -> float:
+    """Return peak allocated CUDA memory in MiB, or zero on CPU."""
+    if device.type != "cuda":
+        return 0.0
+    return torch.cuda.max_memory_allocated(device) / (1024 * 1024)
+
+
+def reset_gpu_memory(device: torch.device) -> None:
+    """Reset CUDA peak memory stats before a measured section."""
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+
+
+def sync_if_cuda(device: torch.device) -> None:
+    """Synchronize CUDA so wall-clock timings include queued GPU kernels."""
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def append_jsonl(path: str | Path, row: Dict) -> None:
+    """Append one metric row to a JSONL file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+
+def write_json(path: str | Path, rows: List[Dict]) -> None:
+    """Write a list of metric rows as formatted JSON."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
+
+def write_csv(path: str | Path, rows: Iterable[Dict]) -> None:
+    """Write metric rows to CSV using the union of all observed keys."""
+    rows = list(rows)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    keys = sorted({key for row in rows for key in row})
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=keys)
         writer.writeheader()
-        for row in results:
-            writer.writerow({key: row.get(key, "") for key in RESULT_FIELDS})
+        for row in rows:
+            writer.writerow({key: row.get(key, "") for key in keys})
 
 
-def load_results(output_dir: str, stem: str = "coarse_to_fine_results") -> List[Dict[str, float]]:
-    path = Path(output_dir) / f"{stem}.json"
-    if not path.exists():
-        return []
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def upsert_result(results: Iterable[Dict[str, float]], new_result: Dict[str, float]) -> List[Dict[str, float]]:
-    key = (
-        new_result.get("mode"),
-        new_result.get("coarse_dim"),
-        new_result.get("compression_method"),
-        new_result.get("device_steps"),
-        new_result.get("edge_steps"),
-    )
-    rows = []
-    for row in results:
-        row_key = (row.get("mode"), row.get("coarse_dim"), row.get("compression_method"), row.get("device_steps"), row.get("edge_steps"))
-        if row_key != key:
-            rows.append(row)
-    rows.append(new_result)
-    return sorted(rows, key=lambda r: (str(r.get("mode")), int(r.get("coarse_dim", 0)), str(r.get("compression_method"))))
-
-
-def format_table(results: Iterable[Dict[str, float]]) -> str:
-    columns = ["mode", "coarse_dim", "compression_method", "comm_MB", "sampling_latency", "tokens_per_sec", "token_acc", "val_loss", "refinement_gain"]
-    rows = []
-    for r in results:
-        rows.append(
-            [
-                str(r.get("mode", "")),
-                str(r.get("coarse_dim", "")),
-                str(r.get("compression_method", "")),
-                f"{float(r.get('comm_MB', 0.0)):.4f}",
-                f"{float(r.get('sampling_latency', 0.0)):.4f}",
-                f"{float(r.get('tokens_per_sec', 0.0)):.2f}",
-                f"{float(r.get('token_acc', 0.0)):.4f}",
-                f"{float(r.get('val_loss', 0.0)):.4f}",
-                f"{float(r.get('refinement_gain', 0.0)):.4f}",
-            ]
-        )
-    widths = [len(c) for c in columns]
+def format_table(rows: Iterable[Dict], columns: List[str]) -> str:
+    """Format selected metric columns as a readable terminal table."""
+    rows = list(rows)
+    formatted = []
     for row in rows:
-        widths = [max(w, len(cell)) for w, cell in zip(widths, row)]
-    header = " | ".join(c.ljust(w) for c, w in zip(columns, widths))
-    sep = "-+-".join("-" * w for w in widths)
-    body = [" | ".join(cell.ljust(w) for cell, w in zip(row, widths)) for row in rows]
-    return "\n".join([header, sep, *body]) if body else header
+        formatted.append([_fmt(row.get(col, "")) for col in columns])
+    widths = [len(col) for col in columns]
+    for row in formatted:
+        widths = [max(width, len(cell)) for width, cell in zip(widths, row)]
+    header = " | ".join(col.ljust(width) for col, width in zip(columns, widths))
+    sep = "-+-".join("-" * width for width in widths)
+    body = [" | ".join(cell.ljust(width) for cell, width in zip(row, widths)) for row in formatted]
+    return "\n".join([header, sep, *body])
+
+
+def _fmt(value) -> str:
+    """Format floats compactly while leaving strings unchanged."""
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)

@@ -1,0 +1,37 @@
+seed: 7
+
+dataset_name: wikitext-2
+tokenizer_name: gpt2
+max_train_examples: 2000
+max_val_examples: 500
+max_train_blocks: 2048
+max_val_blocks: 256
+num_workers: 2
+
+max_length: 128
+batch_size: 8
+train_steps: 200
+eval_steps: 50
+eval_log_steps: 5
+log_interval: 20
+eval_interval: 100
+
+lr: 0.0003
+weight_decay: 0.01
+grad_clip: 1.0
+mask_ratio: 0.30
+
+device_hidden_size: 128
+edge_hidden_size: 384
+device_layers: 2
+edge_layers: 4
+device_heads: 4
+edge_heads: 8
+dropout: 0.1
+coarse_dim: 64
+
+lambda_align: 0.1
+lambda_device: 0.2
+precision: fp32
+
+save_dir: results/wikitext2_coarse
