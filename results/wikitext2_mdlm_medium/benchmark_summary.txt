@@ -1,0 +1,10 @@
+model_backend: mdlm
+pretrained_edge_loaded: True
+coarse_to_fine_better_than_edge_only_top1: False
+perplexity_decreased: False
+top1_gain: -0.002640
+top5_gain: -0.000175
+communication_MB: 0.250000
+quality_gain_per_MB: -0.010562
+latency_delta_vs_edge_only: 0.006139
+hypothesis_supported: False

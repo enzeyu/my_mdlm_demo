@@ -8,6 +8,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from models_mdlm_wrapper import build_mdlm_backend
+
 
 @dataclass
 class ModelConfig:
@@ -56,6 +58,7 @@ class DeviceCoarseModel(nn.Module):
         self.coarse_proj = nn.Linear(config.device_hidden_size, config.coarse_dim)
         self.device_lm_head = nn.Linear(config.device_hidden_size, config.vocab_size)
 
+    # 返回logits 和 低维粗语义中间表示coarse
     def forward(self, input_ids: torch.Tensor, timesteps: torch.Tensor):
         """Return device token logits and low-dimensional coarse representations."""
         bsz, seq_len = input_ids.shape
@@ -83,6 +86,7 @@ class EdgeRefineModel(nn.Module):
             nn.SiLU(),
             nn.Linear(config.edge_hidden_size, config.edge_hidden_size),
         )
+        # 映射粗粒度到边缘的hidden_size
         self.coarse_to_edge = nn.Linear(config.coarse_dim, config.edge_hidden_size)
         layer = nn.TransformerEncoderLayer(
             d_model=config.edge_hidden_size,
@@ -106,8 +110,8 @@ class EdgeRefineModel(nn.Module):
         positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0).expand(bsz, seq_len)
         h = self.token_embed(input_ids) + self.pos_embed(positions)
         h = h + self.time_embed(timesteps[:, None].float()).unsqueeze(1)
-        if coarse is not None:
-            h = h + self.coarse_to_edge(coarse)
+        if coarse is not None:                                                      # 注入核心逻辑
+            h = h + self.coarse_to_edge(coarse)             
         padding_mask = input_ids.eq(self.config.pad_token_id)
         h = self.encoder(h, src_key_padding_mask=padding_mask)
         h = self.norm(h)
@@ -127,24 +131,27 @@ class CoarseToFineModel(nn.Module):
 
     def forward(self, input_ids: torch.Tensor, timesteps: torch.Tensor, mode: str = "coarse_to_fine"):
         """Run `device_only`, `edge_only`, or `coarse_to_fine` forward pass."""
-        device_logits, coarse = self.device_model(input_ids, timesteps)
         if mode == "device_only":
+            device_logits, coarse = self.device_model(input_ids, timesteps)
             return {"logits": device_logits, "device_logits": device_logits, "coarse": coarse}
         if mode == "edge_only":
+            # Edge-only is the ablation where the edge model denoises from masked
+            # tokens alone, without computing or injecting device coarse states.
             edge_logits, edge_hidden, edge_coarse = self.edge_model(input_ids, timesteps, coarse=None)
         elif mode == "coarse_to_fine":
+            device_logits, coarse = self.device_model(input_ids, timesteps)
             edge_logits, edge_hidden, edge_coarse = self.edge_model(input_ids, timesteps, coarse=coarse)
         else:
             raise ValueError(f"Unknown mode: {mode}")
         return {
             "logits": edge_logits,
-            "device_logits": device_logits,
-            "coarse": coarse,
+            "device_logits": device_logits if mode == "coarse_to_fine" else None,
+            "coarse": coarse if mode == "coarse_to_fine" else None,
             "edge_hidden": edge_hidden,
             "edge_coarse": edge_coarse,
         }
 
-
+# 只在 target_mask=True 的位置计算交叉熵和 top-1 accuracy
 def masked_cross_entropy(logits: torch.Tensor, labels: torch.Tensor, target_mask: torch.Tensor):
     """Compute cross entropy and accuracy only on masked denoising targets."""
     vocab = logits.size(-1)
@@ -157,22 +164,71 @@ def masked_cross_entropy(logits: torch.Tensor, labels: torch.Tensor, target_mask
     return loss, acc
 
 
-def build_model_from_config(config: dict, vocab_size: int, pad_token_id: int) -> CoarseToFineModel:
-    """Create the full model from YAML values and tokenizer metadata."""
+def masked_lm_metrics(logits: torch.Tensor, labels: torch.Tensor, target_mask: torch.Tensor, topk: int = 5):
+    """Compute masked-token loss plus top-1 and top-k accuracy."""
+    vocab = logits.size(-1)
+    if target_mask.sum().item() == 0:
+        zero = logits.new_tensor(0.0)
+        return {"loss": zero, "top1_acc": zero, "top5_acc": zero, "num_tokens": 0}
+
+    selected_logits = logits[target_mask]
+    selected_labels = labels[target_mask]
+    loss = F.cross_entropy(selected_logits.view(-1, vocab), selected_labels.view(-1))
+    top1 = selected_logits.argmax(dim=-1).eq(selected_labels).float().mean()
+    k = min(topk, vocab)
+    topk_hits = selected_logits.topk(k, dim=-1).indices.eq(selected_labels.unsqueeze(-1)).any(dim=-1)
+    return {
+        "loss": loss,
+        "top1_acc": top1,
+        "top5_acc": topk_hits.float().mean(),
+        "num_tokens": int(selected_labels.numel()),
+    }
+
+
+def _resolve_int(value, default: int) -> int:
+    """Resolve config values that may be literal ints or `auto`."""
+    if value == "auto" or value is None:
+        return int(default)
+    return int(value)
+
+
+def build_internal_toy_model(config: dict, vocab_size: int, pad_token_id: int) -> CoarseToFineModel:
+    """Create the legacy internal toy model from YAML values."""
     model_config = ModelConfig(
         vocab_size=vocab_size,
         max_length=int(config["max_length"]),
         coarse_dim=int(config["coarse_dim"]),
         device_hidden_size=int(config["device_hidden_size"]),
-        edge_hidden_size=int(config["edge_hidden_size"]),
+        edge_hidden_size=_resolve_int(config.get("edge_hidden_size", 384), 384),
         device_layers=int(config["device_layers"]),
-        edge_layers=int(config["edge_layers"]),
+        edge_layers=_resolve_int(config.get("edge_layers", 4), 4),
         device_heads=int(config.get("device_heads", 4)),
-        edge_heads=int(config.get("edge_heads", 8)),
+        edge_heads=_resolve_int(config.get("edge_heads", 8), 8),
         dropout=float(config.get("dropout", 0.1)),
         pad_token_id=pad_token_id,
     )
     return CoarseToFineModel(model_config)
+
+
+def build_model_from_config(
+    config: dict,
+    vocab_size: int,
+    pad_token_id: int,
+    mask_token_id: int | None = None,
+):
+    """Create a coarse-to-fine model for `internal_toy` or `mdlm` backend."""
+    backend = str(config.get("model_backend", "internal_toy"))
+    if backend == "internal_toy":
+        model = build_internal_toy_model(config, vocab_size, pad_token_id)
+        model.backend_name = "internal_toy"
+        model.pretrained_loaded = False
+        model.load_message = "using legacy internal_toy Transformer backend"
+        return model
+    if backend == "mdlm":
+        if mask_token_id is None:
+            raise ValueError("mask_token_id is required for model_backend=mdlm")
+        return build_mdlm_backend(config, vocab_size, pad_token_id, mask_token_id)
+    raise ValueError(f"Unknown model_backend: {backend}")
 
 
 def coarse_alignment_loss(device_coarse: torch.Tensor, edge_coarse: torch.Tensor, target_mask: torch.Tensor):

@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 
 @dataclass
@@ -36,11 +37,15 @@ class TokenBlockDataset(Dataset):
         return self.blocks[index]
 
 
-def load_tokenizer(tokenizer_name: str):
+def load_tokenizer(tokenizer_name: str, local_files_only: bool = False):
     """Load GPT-style tokenizer and add a real `[MASK]` token when absent."""
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_name,
+        trust_remote_code=True,
+        local_files_only=local_files_only,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.mask_token is None:
@@ -95,7 +100,11 @@ def tokenize_to_blocks(texts, tokenizer, max_length: int, max_blocks: int) -> to
 
 def build_dataloaders(config: Dict) -> Tuple[DataLoader, DataLoader, object, TokenizerInfo]:
     """Build tokenizer plus train/validation dataloaders from the YAML config."""
-    tokenizer = load_tokenizer(config["tokenizer_name"])
+    # 加载tokenizer 和 训练、验证文本, 切成固定长度的块
+    tokenizer = load_tokenizer(
+        config["tokenizer_name"],
+        local_files_only=bool(config.get("hf_local_files_only", False)),
+    )
     train_texts, val_texts = load_wikitext_splits(
         config.get("dataset_name", "wikitext-2"),
         int(config.get("max_train_examples", 2000)),
@@ -121,6 +130,7 @@ def build_dataloaders(config: Dict) -> Tuple[DataLoader, DataLoader, object, Tok
         num_workers=int(config.get("num_workers", 2)),
         pin_memory=True,
     )
+    # 打包分词器信息
     info = TokenizerInfo(
         vocab_size=len(tokenizer),
         pad_token_id=int(tokenizer.pad_token_id),

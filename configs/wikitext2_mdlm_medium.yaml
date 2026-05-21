@@ -1,0 +1,55 @@
+seed: 7
+
+dataset_name: wikitext-2
+tokenizer_name: /mnt/data/enzeyu/hf_downloads/models/gpt2
+hf_local_files_only: true
+
+model_backend: mdlm
+use_pretrained_edge: true
+require_pretrained_edge: true
+# The original kuleshov-group/mdlm-owt remote code imports flash-attn.
+# This variant is pretrained on OWT as well, but uses regular attention and is
+# easier to run in this environment.
+pretrained_edge_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
+
+max_train_examples: 100000000
+max_val_examples: 100000000
+max_train_blocks: 100000000
+max_val_blocks: 100000000
+num_workers: 2
+
+max_length: 128
+batch_size: 8
+gradient_accumulation_steps: 4
+train_steps: 20000
+eval_steps: 1000
+eval_log_steps: 20
+eval_interval: 1000
+log_interval: 100
+
+device_model_scale: small
+device_hidden_size: 256
+device_layers: 4
+device_heads: 8
+
+edge_model_name: mdlm-no_flashattn-fp32-owt
+edge_hidden_size: auto
+edge_layers: auto
+edge_heads: auto
+
+coarse_dim: 128
+coarse_conditioning: hidden
+dropout: 0.1
+
+lr: 0.0001
+weight_decay: 0.01
+grad_clip: 1.0
+mask_ratio: 0.15
+
+lambda_align: 0.05
+lambda_device: 0.2
+lambda_distill: 0.1
+
+precision: bf16
+
+save_dir: results/wikitext2_mdlm_medium
