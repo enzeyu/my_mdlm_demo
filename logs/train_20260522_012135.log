@@ -1,0 +1,239 @@
+nohup: ignoring input
+device=cuda
+Using the latest cached version of the dataset since wikitext couldn't be found on the Hugging Face Hub
+Found the latest cached dataset configuration 'wikitext-2-raw-v1' at /home/enzeyu/.cache/huggingface/datasets/wikitext/wikitext-2-raw-v1/0.0.0/b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Sat May  9 08:55:42 2026).
+model_backend=mdlm
+pretrained_edge_loaded=True
+edge_model_status=loaded pretrained edge MDLM from /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt via HF_ENDPOINT=https://hf-mirror.com/; MDLM custom vocab_embed already matches vocab_size=50258; patched flash-attn rotary kernel
+edge_model_is_toy=False
+step=0001 loss=64.7016 edge_loss=2.8295 device_loss=69.8842 align=820.4493 acc=0.4323 step_time=0.416s gpu_mem=3260.7MB
+step=0100 loss=58.4795 edge_loss=2.2947 device_loss=51.2825 align=817.9503 acc=0.5305 step_time=0.130s gpu_mem=5906.7MB
+step=0200 loss=50.1936 edge_loss=2.2285 device_loss=27.9162 align=796.0724 acc=0.5568 step_time=0.128s gpu_mem=5906.7MB
+step=0300 loss=38.7701 edge_loss=2.1037 device_loss=10.6272 align=673.2587 acc=0.5833 step_time=0.130s gpu_mem=5907.0MB
+step=0400 loss=34.7228 edge_loss=2.3250 device_loss=10.3699 align=590.2113 acc=0.5280 step_time=0.131s gpu_mem=5907.0MB
+step=0500 loss=29.6382 edge_loss=1.9170 device_loss=10.2594 align=496.1606 acc=0.6042 step_time=0.132s gpu_mem=5907.0MB
+step=0600 loss=31.4249 edge_loss=1.7819 device_loss=10.3737 align=534.5243 acc=0.6382 step_time=0.132s gpu_mem=5908.8MB
+step=0700 loss=31.9775 edge_loss=1.8631 device_loss=9.8980 align=546.2502 acc=0.6027 step_time=0.132s gpu_mem=5908.8MB
+step=0800 loss=28.1687 edge_loss=2.0855 device_loss=10.4591 align=462.7067 acc=0.5783 step_time=0.132s gpu_mem=5908.8MB
+step=0900 loss=29.0973 edge_loss=2.0114 device_loss=10.2746 align=483.8154 acc=0.5894 step_time=0.132s gpu_mem=5908.8MB
+step=1000 loss=27.0597 edge_loss=1.6726 device_loss=10.3771 align=448.7816 acc=0.6228 step_time=0.135s gpu_mem=5909.1MB
+step=1100 loss=58.3112 edge_loss=2.1282 device_loss=10.5307 align=1064.0027 acc=0.5625 step_time=0.132s gpu_mem=5909.1MB
+step=1200 loss=29.7540 edge_loss=1.9383 device_loss=11.7152 align=489.2086 acc=0.6486 step_time=0.133s gpu_mem=5909.1MB
+step=1300 loss=28.4900 edge_loss=1.9208 device_loss=12.7897 align=458.2241 acc=0.5960 step_time=0.134s gpu_mem=5909.1MB
+step=1400 loss=27.8381 edge_loss=1.9344 device_loss=15.7821 align=428.7722 acc=0.6375 step_time=0.133s gpu_mem=5909.1MB
+step=1500 loss=27.3772 edge_loss=2.0089 device_loss=19.5502 align=396.2426 acc=0.5733 step_time=0.133s gpu_mem=5909.1MB
+step=1600 loss=27.0001 edge_loss=1.9000 device_loss=20.3266 align=383.8924 acc=0.6358 step_time=0.133s gpu_mem=5909.1MB
+step=1700 loss=23.0110 edge_loss=1.4532 device_loss=21.2069 align=305.7505 acc=0.6145 step_time=0.134s gpu_mem=5909.1MB
+step=1800 loss=27.3249 edge_loss=1.7190 device_loss=22.0933 align=385.7655 acc=0.6481 step_time=0.135s gpu_mem=5909.1MB
+step=1900 loss=26.1189 edge_loss=1.9350 device_loss=20.6270 align=363.3056 acc=0.6168 step_time=0.135s gpu_mem=5909.1MB
+step=2000 loss=22.9269 edge_loss=2.1666 device_loss=22.1073 align=288.5109 acc=0.5714 step_time=0.134s gpu_mem=5909.1MB
+step=2100 loss=23.9502 edge_loss=1.7428 device_loss=22.5526 align=312.5253 acc=0.6211 step_time=0.135s gpu_mem=5909.1MB
+step=2200 loss=20.3019 edge_loss=1.9471 device_loss=18.3966 align=260.0127 acc=0.6258 step_time=0.136s gpu_mem=5909.1MB
+step=2300 loss=20.3724 edge_loss=1.4639 device_loss=19.3015 align=264.2270 acc=0.6667 step_time=0.135s gpu_mem=5909.1MB
+step=2400 loss=21.8508 edge_loss=1.8323 device_loss=19.7320 align=286.0262 acc=0.6296 step_time=0.132s gpu_mem=5909.1MB
+step=2500 loss=20.2376 edge_loss=1.8239 device_loss=17.0079 align=270.0251 acc=0.6386 step_time=0.133s gpu_mem=5909.1MB
+step=2600 loss=19.2399 edge_loss=2.0525 device_loss=16.4212 align=248.5933 acc=0.6149 step_time=0.134s gpu_mem=5909.1MB
+step=2700 loss=20.9957 edge_loss=1.7309 device_loss=19.8664 align=269.8491 acc=0.6594 step_time=0.134s gpu_mem=5909.1MB
+step=2800 loss=19.2059 edge_loss=1.8252 device_loss=17.9617 align=244.0583 acc=0.6170 step_time=0.133s gpu_mem=5909.1MB
+step=2900 loss=19.8362 edge_loss=2.4262 device_loss=17.6852 align=247.1543 acc=0.5541 step_time=0.133s gpu_mem=5909.1MB
+step=3000 loss=18.0335 edge_loss=2.1166 device_loss=17.2331 align=219.2730 acc=0.5374 step_time=0.133s gpu_mem=5909.1MB
+step=3100 loss=19.9376 edge_loss=1.8675 device_loss=17.6387 align=260.9113 acc=0.6250 step_time=0.133s gpu_mem=5909.1MB
+step=3200 loss=20.4337 edge_loss=1.5160 device_loss=17.8223 align=275.6574 acc=0.6266 step_time=0.131s gpu_mem=5911.3MB
+step=3300 loss=17.2931 edge_loss=1.3520 device_loss=16.1063 align=223.8421 acc=0.6929 step_time=0.131s gpu_mem=5911.3MB
+step=3400 loss=19.8570 edge_loss=1.3933 device_loss=16.4987 align=274.1838 acc=0.7124 step_time=0.133s gpu_mem=5911.3MB
+step=3500 loss=18.7620 edge_loss=1.8765 device_loss=16.0397 align=246.1923 acc=0.6460 step_time=0.132s gpu_mem=5911.3MB
+step=3600 loss=17.6984 edge_loss=1.8531 device_loss=13.3266 align=239.6684 acc=0.6358 step_time=0.134s gpu_mem=5911.3MB
+step=3700 loss=19.0072 edge_loss=1.9426 device_loss=15.4219 align=253.4387 acc=0.6012 step_time=0.132s gpu_mem=5911.3MB
+step=3800 loss=18.2058 edge_loss=1.7301 device_loss=15.2552 align=240.5210 acc=0.6076 step_time=0.132s gpu_mem=5911.3MB
+step=3900 loss=18.5122 edge_loss=1.6120 device_loss=15.0412 align=251.1085 acc=0.6606 step_time=0.133s gpu_mem=5911.3MB
+step=4000 loss=18.0816 edge_loss=1.8658 device_loss=15.0091 align=239.9607 acc=0.6503 step_time=0.133s gpu_mem=5911.3MB
+step=4100 loss=17.9111 edge_loss=1.7766 device_loss=16.6425 align=227.8969 acc=0.6000 step_time=0.132s gpu_mem=5911.3MB
+step=4200 loss=17.3474 edge_loss=1.6601 device_loss=13.9176 align=233.5684 acc=0.6291 step_time=0.132s gpu_mem=5911.3MB
+step=4300 loss=18.0064 edge_loss=1.6238 device_loss=11.8478 align=258.9190 acc=0.6755 step_time=0.132s gpu_mem=5911.3MB
+step=4400 loss=17.9385 edge_loss=2.1272 device_loss=15.1602 align=229.7324 acc=0.5775 step_time=0.132s gpu_mem=5911.3MB
+step=4500 loss=17.5429 edge_loss=1.7813 device_loss=14.5922 align=233.3631 acc=0.6776 step_time=0.131s gpu_mem=5911.3MB
+step=4600 loss=17.8216 edge_loss=1.7601 device_loss=11.8826 align=251.5370 acc=0.5725 step_time=0.132s gpu_mem=5911.3MB
+step=4700 loss=17.7632 edge_loss=1.6653 device_loss=14.4569 align=239.7129 acc=0.6338 step_time=0.132s gpu_mem=5911.3MB
+step=4800 loss=16.5012 edge_loss=1.7567 device_loss=13.0227 align=221.3759 acc=0.6364 step_time=0.132s gpu_mem=5911.3MB
+step=4900 loss=20.0978 edge_loss=1.6867 device_loss=13.9910 align=287.3055 acc=0.5963 step_time=0.131s gpu_mem=5911.3MB
+step=5000 loss=16.3878 edge_loss=1.4915 device_loss=12.5654 align=226.8734 acc=0.6620 step_time=0.132s gpu_mem=5911.3MB
+step=5100 loss=16.4346 edge_loss=1.5100 device_loss=11.9407 align=227.1486 acc=0.6260 step_time=0.132s gpu_mem=5911.3MB
+step=5200 loss=18.0613 edge_loss=1.8963 device_loss=12.6722 align=252.0126 acc=0.5677 step_time=0.132s gpu_mem=5911.3MB
+step=5300 loss=17.0014 edge_loss=1.6543 device_loss=11.5140 align=242.0297 acc=0.6549 step_time=0.133s gpu_mem=5911.3MB
+step=5400 loss=16.9756 edge_loss=1.3023 device_loss=11.3055 align=248.2370 acc=0.7205 step_time=0.133s gpu_mem=5911.3MB
+step=5500 loss=17.6490 edge_loss=1.8437 device_loss=12.1126 align=245.9127 acc=0.6181 step_time=0.132s gpu_mem=5911.3MB
+step=5600 loss=16.7813 edge_loss=1.6934 device_loss=11.2966 align=235.5373 acc=0.6486 step_time=0.133s gpu_mem=5911.3MB
+step=5700 loss=17.1628 edge_loss=2.2066 device_loss=12.8430 align=225.5993 acc=0.5683 step_time=0.132s gpu_mem=5911.3MB
+step=5800 loss=16.1189 edge_loss=1.8443 device_loss=10.7864 align=223.7521 acc=0.6104 step_time=0.131s gpu_mem=5911.3MB
+step=5900 loss=15.6588 edge_loss=1.5147 device_loss=11.4108 align=218.9727 acc=0.6690 step_time=0.132s gpu_mem=5911.3MB
+step=6000 loss=16.2129 edge_loss=1.6949 device_loss=11.4154 align=225.5379 acc=0.6766 step_time=0.132s gpu_mem=5911.3MB
+step=6100 loss=16.9725 edge_loss=1.6030 device_loss=11.0632 align=244.0679 acc=0.6627 step_time=0.132s gpu_mem=5911.3MB
+step=6200 loss=16.1158 edge_loss=1.6026 device_loss=10.2287 align=231.6197 acc=0.6687 step_time=0.134s gpu_mem=5911.3MB
+step=6300 loss=16.2090 edge_loss=1.6361 device_loss=11.7252 align=226.2125 acc=0.6391 step_time=0.133s gpu_mem=5911.3MB
+step=6400 loss=15.8146 edge_loss=1.7154 device_loss=11.3217 align=217.0859 acc=0.6204 step_time=0.131s gpu_mem=5911.3MB
+step=6500 loss=16.7962 edge_loss=1.7527 device_loss=12.0629 align=233.1519 acc=0.5736 step_time=0.132s gpu_mem=5911.3MB
+step=6600 loss=16.8690 edge_loss=1.9113 device_loss=12.2939 align=231.1198 acc=0.6115 step_time=0.131s gpu_mem=5913.3MB
+step=6700 loss=16.1937 edge_loss=1.5291 device_loss=11.6927 align=226.1601 acc=0.7237 step_time=0.133s gpu_mem=5913.3MB
+step=6800 loss=16.6188 edge_loss=1.9916 device_loss=11.0150 align=230.6736 acc=0.5500 step_time=0.132s gpu_mem=5913.3MB
+step=6900 loss=17.1632 edge_loss=1.7550 device_loss=11.2629 align=245.2367 acc=0.5879 step_time=0.132s gpu_mem=5913.3MB
+step=7000 loss=19.3454 edge_loss=1.8619 device_loss=12.6582 align=280.0603 acc=0.6338 step_time=0.132s gpu_mem=5913.3MB
+step=7100 loss=16.1651 edge_loss=1.4545 device_loss=9.4878 align=239.1653 acc=0.7292 step_time=0.132s gpu_mem=5913.3MB
+step=7200 loss=15.8028 edge_loss=1.4361 device_loss=10.0711 align=228.9011 acc=0.6543 step_time=0.133s gpu_mem=5913.3MB
+step=7300 loss=18.4091 edge_loss=1.4990 device_loss=10.3684 align=279.0487 acc=0.6494 step_time=0.132s gpu_mem=5913.3MB
+step=7400 loss=15.2811 edge_loss=1.6951 device_loss=9.6286 align=217.2446 acc=0.6301 step_time=0.131s gpu_mem=5913.3MB
+step=7500 loss=15.6996 edge_loss=1.5270 device_loss=10.1786 align=224.6468 acc=0.6608 step_time=0.134s gpu_mem=5913.3MB
+step=7600 loss=16.3073 edge_loss=1.7840 device_loss=10.3993 align=231.6974 acc=0.6324 step_time=0.132s gpu_mem=5913.3MB
+step=7700 loss=14.9333 edge_loss=1.2456 device_loss=9.7729 align=217.7230 acc=0.7256 step_time=0.134s gpu_mem=5913.3MB
+step=7800 loss=16.1770 edge_loss=1.4848 device_loss=9.5835 align=238.8370 acc=0.6712 step_time=0.133s gpu_mem=5913.3MB
+step=7900 loss=16.2498 edge_loss=1.7367 device_loss=10.0348 align=233.2535 acc=0.5986 step_time=0.133s gpu_mem=5913.3MB
+step=8000 loss=16.4882 edge_loss=1.5738 device_loss=11.2386 align=234.8230 acc=0.6486 step_time=0.133s gpu_mem=5913.3MB
+step=8100 loss=16.1818 edge_loss=1.7096 device_loss=9.5085 align=234.3369 acc=0.6392 step_time=0.133s gpu_mem=5913.3MB
+step=8200 loss=16.6667 edge_loss=1.9224 device_loss=10.6469 align=234.8832 acc=0.5821 step_time=0.132s gpu_mem=5913.3MB
+step=8300 loss=16.5115 edge_loss=2.0777 device_loss=10.3703 align=230.2754 acc=0.5849 step_time=0.132s gpu_mem=5913.3MB
+step=8400 loss=16.5456 edge_loss=1.3673 device_loss=9.6282 align=248.4480 acc=0.7192 step_time=0.133s gpu_mem=5913.3MB
+step=8500 loss=17.3838 edge_loss=1.4593 device_loss=9.8156 align=262.5565 acc=0.6617 step_time=0.132s gpu_mem=5913.3MB
+step=8600 loss=16.0858 edge_loss=1.5999 device_loss=9.8381 align=234.3934 acc=0.6049 step_time=0.133s gpu_mem=5913.3MB
+step=8700 loss=16.1503 edge_loss=1.6462 device_loss=9.4994 align=235.8542 acc=0.6855 step_time=0.134s gpu_mem=5913.3MB
+step=8800 loss=17.3937 edge_loss=1.9631 device_loss=11.0947 align=246.4260 acc=0.5844 step_time=0.132s gpu_mem=5913.3MB
+step=8900 loss=16.6804 edge_loss=1.6240 device_loss=9.6312 align=246.5205 acc=0.6474 step_time=0.133s gpu_mem=5913.3MB
+step=9000 loss=16.5803 edge_loss=1.9268 device_loss=9.7451 align=239.1618 acc=0.6200 step_time=0.133s gpu_mem=5913.3MB
+step=9100 loss=16.3377 edge_loss=1.5409 device_loss=10.4543 align=236.5099 acc=0.6582 step_time=0.132s gpu_mem=5913.3MB
+step=9200 loss=16.0737 edge_loss=1.3560 device_loss=9.6344 align=239.8125 acc=0.6903 step_time=0.133s gpu_mem=5913.3MB
+step=9300 loss=16.1538 edge_loss=1.2338 device_loss=8.8615 align=246.8954 acc=0.7113 step_time=0.131s gpu_mem=5913.3MB
+step=9400 loss=15.4526 edge_loss=2.0525 device_loss=8.5757 align=219.7393 acc=0.6000 step_time=0.132s gpu_mem=5913.3MB
+step=9500 loss=15.5643 edge_loss=1.5398 device_loss=9.2798 align=228.1764 acc=0.6711 step_time=0.132s gpu_mem=5913.3MB
+step=9600 loss=15.6120 edge_loss=1.6028 device_loss=9.7570 align=225.7560 acc=0.6835 step_time=0.132s gpu_mem=5913.3MB
+step=9700 loss=15.9720 edge_loss=1.9582 device_loss=10.0621 align=224.4741 acc=0.5714 step_time=0.133s gpu_mem=5913.3MB
+step=9800 loss=15.1346 edge_loss=1.1357 device_loss=8.1749 align=232.3087 acc=0.7174 step_time=0.132s gpu_mem=5913.3MB
+step=9900 loss=16.4727 edge_loss=1.9006 device_loss=8.1516 align=245.4375 acc=0.5449 step_time=0.133s gpu_mem=5913.3MB
+step=10000 loss=15.3728 edge_loss=1.9197 device_loss=8.9609 align=218.6023 acc=0.6168 step_time=0.132s gpu_mem=5913.3MB
+step=10100 loss=15.2401 edge_loss=1.3448 device_loss=8.4892 align=229.3126 acc=0.6899 step_time=0.132s gpu_mem=5913.3MB
+step=10200 loss=15.6682 edge_loss=2.0728 device_loss=9.8404 align=217.5059 acc=0.6184 step_time=0.132s gpu_mem=5913.3MB
+step=10300 loss=15.7100 edge_loss=1.4738 device_loss=9.5841 align=230.4966 acc=0.6875 step_time=0.133s gpu_mem=5913.3MB
+step=10400 loss=16.1058 edge_loss=1.9906 device_loss=9.2122 align=231.3190 acc=0.5674 step_time=0.132s gpu_mem=5913.3MB
+step=10500 loss=15.4167 edge_loss=1.6408 device_loss=8.8950 align=224.6757 acc=0.7063 step_time=0.133s gpu_mem=5913.3MB
+step=10600 loss=16.3159 edge_loss=1.6838 device_loss=9.3032 align=240.0345 acc=0.6275 step_time=0.132s gpu_mem=5913.3MB
+step=10700 loss=15.1439 edge_loss=1.3282 device_loss=8.5057 align=227.6831 acc=0.6607 step_time=0.132s gpu_mem=5913.3MB
+step=10800 loss=15.7442 edge_loss=1.5305 device_loss=8.7569 align=234.7035 acc=0.6928 step_time=0.133s gpu_mem=5913.3MB
+step=10900 loss=15.7706 edge_loss=1.8378 device_loss=8.6154 align=229.6599 acc=0.6309 step_time=0.133s gpu_mem=5913.3MB
+step=11000 loss=16.8892 edge_loss=1.8126 device_loss=8.8060 align=251.9319 acc=0.6159 step_time=0.133s gpu_mem=5913.3MB
+step=11100 loss=14.9710 edge_loss=1.9327 device_loss=8.5242 align=212.8478 acc=0.6149 step_time=0.131s gpu_mem=5913.3MB
+step=11200 loss=15.6969 edge_loss=1.9413 device_loss=9.2256 align=224.7796 acc=0.5897 step_time=0.134s gpu_mem=5913.3MB
+step=11300 loss=16.2853 edge_loss=2.0356 device_loss=9.6235 align=232.4490 acc=0.6294 step_time=0.133s gpu_mem=5913.3MB
+step=11400 loss=15.4725 edge_loss=1.6883 device_loss=8.1498 align=229.9419 acc=0.6323 step_time=0.134s gpu_mem=5913.3MB
+step=11500 loss=14.5522 edge_loss=1.5538 device_loss=8.3714 align=211.9545 acc=0.6689 step_time=0.133s gpu_mem=5913.3MB
+step=11600 loss=15.0451 edge_loss=1.4478 device_loss=9.1488 align=220.0421 acc=0.6832 step_time=0.133s gpu_mem=5913.3MB
+step=11700 loss=15.6959 edge_loss=2.0086 device_loss=8.5859 align=225.1009 acc=0.5793 step_time=0.133s gpu_mem=5913.3MB
+step=11800 loss=15.5657 edge_loss=1.8645 device_loss=8.4182 align=226.8554 acc=0.6096 step_time=0.133s gpu_mem=5913.3MB
+step=11900 loss=15.9248 edge_loss=1.5330 device_loss=8.1768 align=240.7460 acc=0.6730 step_time=0.134s gpu_mem=5913.3MB
+step=12000 loss=16.0698 edge_loss=1.3549 device_loss=8.8789 align=245.4595 acc=0.6790 step_time=0.133s gpu_mem=5913.3MB
+step=12100 loss=14.7167 edge_loss=1.1322 device_loss=8.4322 align=223.4115 acc=0.7530 step_time=0.132s gpu_mem=5913.3MB
+step=12200 loss=14.6037 edge_loss=1.1625 device_loss=7.8601 align=223.3458 acc=0.7162 step_time=0.132s gpu_mem=5913.3MB
+step=12300 loss=15.1738 edge_loss=1.6207 device_loss=8.4131 align=224.2872 acc=0.6053 step_time=0.132s gpu_mem=5913.3MB
+step=12400 loss=15.1721 edge_loss=1.4350 device_loss=8.6935 align=225.7288 acc=0.6690 step_time=0.133s gpu_mem=5913.3MB
+step=12500 loss=16.3222 edge_loss=1.7020 device_loss=8.8040 align=242.8766 acc=0.6621 step_time=0.132s gpu_mem=5913.3MB
+step=12600 loss=16.7319 edge_loss=2.1039 device_loss=9.1644 align=241.6432 acc=0.6053 step_time=0.133s gpu_mem=5913.3MB
+step=12700 loss=15.7174 edge_loss=1.6910 device_loss=9.1599 align=229.8813 acc=0.5909 step_time=0.132s gpu_mem=5913.3MB
+step=12800 loss=15.5588 edge_loss=1.3917 device_loss=8.1510 align=236.4652 acc=0.6894 step_time=0.134s gpu_mem=5913.3MB
+step=12900 loss=16.7913 edge_loss=2.3776 device_loss=8.7093 align=239.9053 acc=0.5380 step_time=0.132s gpu_mem=5913.3MB
+step=13000 loss=15.6725 edge_loss=2.0710 device_loss=9.1034 align=221.7668 acc=0.5789 step_time=0.132s gpu_mem=5913.3MB
+step=13100 loss=15.6396 edge_loss=2.1943 device_loss=9.6467 align=216.4423 acc=0.5528 step_time=0.132s gpu_mem=5913.3MB
+step=13200 loss=15.0314 edge_loss=1.6198 device_loss=8.6685 align=219.8121 acc=0.6497 step_time=0.131s gpu_mem=5913.3MB
+step=13300 loss=14.7463 edge_loss=1.4367 device_loss=8.6495 align=217.9053 acc=0.6496 step_time=0.132s gpu_mem=5913.3MB
+step=13400 loss=14.4193 edge_loss=1.7042 device_loss=8.5091 align=206.5352 acc=0.5944 step_time=0.133s gpu_mem=5913.3MB
+step=13500 loss=15.1060 edge_loss=1.6440 device_loss=8.4070 align=221.2865 acc=0.6452 step_time=0.133s gpu_mem=5913.3MB
+step=13600 loss=16.2453 edge_loss=1.6210 device_loss=8.8903 align=243.0990 acc=0.6529 step_time=0.132s gpu_mem=5913.3MB
+step=13700 loss=16.7632 edge_loss=1.4995 device_loss=8.8471 align=255.6360 acc=0.6954 step_time=0.134s gpu_mem=5913.3MB
+step=13800 loss=16.3405 edge_loss=2.1424 device_loss=8.9148 align=234.0353 acc=0.6000 step_time=0.134s gpu_mem=5913.3MB
+step=13900 loss=16.3903 edge_loss=1.7134 device_loss=8.2525 align=246.9740 acc=0.6735 step_time=0.134s gpu_mem=5913.3MB
+step=14000 loss=15.0243 edge_loss=1.6176 device_loss=8.2896 align=222.2790 acc=0.6483 step_time=0.133s gpu_mem=5913.3MB
+step=14100 loss=15.1190 edge_loss=1.2867 device_loss=8.5257 align=228.7035 acc=0.6605 step_time=0.133s gpu_mem=5913.3MB
+step=14200 loss=16.5504 edge_loss=2.3536 device_loss=8.7105 align=236.0192 acc=0.5302 step_time=0.133s gpu_mem=5915.5MB
+step=14300 loss=15.6792 edge_loss=1.7024 device_loss=8.7637 align=230.3398 acc=0.6863 step_time=0.134s gpu_mem=5915.5MB
+step=14400 loss=16.1933 edge_loss=1.6894 device_loss=8.8547 align=239.8479 acc=0.6299 step_time=0.133s gpu_mem=5915.5MB
+step=14500 loss=16.8325 edge_loss=2.2343 device_loss=8.5569 align=244.7675 acc=0.5556 step_time=0.133s gpu_mem=5915.5MB
+step=14600 loss=16.6315 edge_loss=1.3661 device_loss=8.4170 align=256.9875 acc=0.6944 step_time=0.133s gpu_mem=5915.5MB
+step=14700 loss=15.4763 edge_loss=1.7207 device_loss=8.1030 align=229.8966 acc=0.6813 step_time=0.133s gpu_mem=5915.5MB
+step=14800 loss=15.2882 edge_loss=1.8170 device_loss=8.4874 align=221.9367 acc=0.6211 step_time=0.133s gpu_mem=5915.5MB
+step=14900 loss=15.6241 edge_loss=1.8457 device_loss=8.5694 align=227.4564 acc=0.6331 step_time=0.133s gpu_mem=5915.5MB
+step=15000 loss=15.0067 edge_loss=1.6212 device_loss=7.7552 align=224.1834 acc=0.6757 step_time=0.134s gpu_mem=5915.5MB
+step=15100 loss=16.2731 edge_loss=1.7519 device_loss=8.5076 align=242.4878 acc=0.6643 step_time=0.133s gpu_mem=5915.5MB
+step=15200 loss=16.7931 edge_loss=1.5418 device_loss=8.2294 align=258.6525 acc=0.6587 step_time=0.133s gpu_mem=5915.5MB
+step=15300 loss=14.5287 edge_loss=1.7964 device_loss=7.8804 align=210.7446 acc=0.6838 step_time=0.131s gpu_mem=5915.5MB
+step=15400 loss=14.7697 edge_loss=1.3786 device_loss=8.2747 align=221.1380 acc=0.7320 step_time=0.133s gpu_mem=5915.5MB
+step=15500 loss=14.6944 edge_loss=1.1833 device_loss=7.5504 align=226.9028 acc=0.7143 step_time=0.132s gpu_mem=5915.5MB
+step=15600 loss=15.8387 edge_loss=1.3042 device_loss=8.0960 align=245.6544 acc=0.6903 step_time=0.132s gpu_mem=5915.5MB
+step=15700 loss=14.9049 edge_loss=1.5969 device_loss=7.3714 align=224.9255 acc=0.6687 step_time=0.134s gpu_mem=5915.5MB
+step=15800 loss=14.9659 edge_loss=1.4444 device_loss=8.0990 align=224.2213 acc=0.7310 step_time=0.133s gpu_mem=5915.5MB
+step=15900 loss=16.4778 edge_loss=1.6841 device_loss=7.9413 align=251.0880 acc=0.6389 step_time=0.131s gpu_mem=5915.5MB
+step=16000 loss=16.0063 edge_loss=1.6370 device_loss=8.1027 align=241.7276 acc=0.6471 step_time=0.132s gpu_mem=5915.5MB
+step=16100 loss=16.2804 edge_loss=1.7973 device_loss=9.0500 align=239.7161 acc=0.6645 step_time=0.132s gpu_mem=5915.5MB
+step=16200 loss=16.8111 edge_loss=1.8250 device_loss=9.0943 align=248.9025 acc=0.6556 step_time=0.132s gpu_mem=5915.5MB
+step=16300 loss=15.6676 edge_loss=1.6519 device_loss=8.0209 align=235.3605 acc=0.6689 step_time=0.133s gpu_mem=5915.5MB
+step=16400 loss=15.0423 edge_loss=1.7442 device_loss=7.0950 align=225.7916 acc=0.6715 step_time=0.131s gpu_mem=5915.5MB
+step=16500 loss=15.7990 edge_loss=1.4433 device_loss=7.7169 align=242.8233 acc=0.6726 step_time=0.133s gpu_mem=5915.5MB
+step=16600 loss=16.0755 edge_loss=1.4889 device_loss=7.4414 align=249.1175 acc=0.6478 step_time=0.134s gpu_mem=5915.5MB
+step=16700 loss=15.5764 edge_loss=1.0492 device_loss=8.3117 align=243.4131 acc=0.7761 step_time=0.133s gpu_mem=5915.5MB
+step=16800 loss=15.7927 edge_loss=1.8554 device_loss=8.3679 align=232.4805 acc=0.6500 step_time=0.134s gpu_mem=5915.5MB
+step=16900 loss=15.3459 edge_loss=1.7416 device_loss=8.3209 align=225.4743 acc=0.6040 step_time=0.134s gpu_mem=5915.5MB
+step=17000 loss=15.2130 edge_loss=1.5951 device_loss=7.7580 align=228.0230 acc=0.6974 step_time=0.131s gpu_mem=5915.5MB
+step=17100 loss=16.0793 edge_loss=1.5544 device_loss=8.0117 align=244.9666 acc=0.6938 step_time=0.133s gpu_mem=5915.5MB
+step=17200 loss=15.2985 edge_loss=1.4658 device_loss=8.4483 align=228.9744 acc=0.6829 step_time=0.133s gpu_mem=5915.5MB
+step=17300 loss=14.9793 edge_loss=1.3153 device_loss=7.5925 align=230.2283 acc=0.7212 step_time=0.132s gpu_mem=5915.5MB
+step=17400 loss=16.0651 edge_loss=1.8223 device_loss=7.8574 align=240.5476 acc=0.6316 step_time=0.132s gpu_mem=5915.5MB
+step=17500 loss=16.1028 edge_loss=1.8272 device_loss=8.9363 align=236.0923 acc=0.6168 step_time=0.133s gpu_mem=5915.5MB
+step=17600 loss=15.1188 edge_loss=1.4215 device_loss=7.3444 align=232.4315 acc=0.7384 step_time=0.133s gpu_mem=5915.5MB
+step=17700 loss=15.2097 edge_loss=1.4165 device_loss=8.0664 align=229.7955 acc=0.6757 step_time=0.133s gpu_mem=5915.5MB
+step=17800 loss=17.5649 edge_loss=1.9565 device_loss=8.3571 align=265.1337 acc=0.6370 step_time=0.134s gpu_mem=5915.5MB
+step=17900 loss=15.5712 edge_loss=1.7580 device_loss=7.5844 align=234.1765 acc=0.6188 step_time=0.132s gpu_mem=5915.5MB
+step=18000 loss=15.8863 edge_loss=2.0136 device_loss=8.5051 align=230.2848 acc=0.5962 step_time=0.132s gpu_mem=5915.5MB
+step=18100 loss=16.0560 edge_loss=1.7559 device_loss=9.2214 align=234.6280 acc=0.6484 step_time=0.132s gpu_mem=5915.5MB
+step=18200 loss=15.6868 edge_loss=1.6555 device_loss=8.0389 align=235.3519 acc=0.6524 step_time=0.133s gpu_mem=5915.5MB
+step=18300 loss=15.2360 edge_loss=1.5307 device_loss=8.1083 align=228.9575 acc=0.7090 step_time=0.131s gpu_mem=5915.5MB
+step=18400 loss=14.6799 edge_loss=1.6493 device_loss=7.3704 align=219.0562 acc=0.6620 step_time=0.132s gpu_mem=5915.5MB
+step=18500 loss=14.5654 edge_loss=1.3885 device_loss=7.8851 align=218.2095 acc=0.6897 step_time=0.133s gpu_mem=5915.5MB
+step=18600 loss=15.0048 edge_loss=1.2595 device_loss=7.5642 align=231.8753 acc=0.6813 step_time=0.134s gpu_mem=5915.5MB
+step=18700 loss=14.1727 edge_loss=0.8546 device_loss=7.4380 align=223.4043 acc=0.7931 step_time=0.134s gpu_mem=5915.5MB
+step=18800 loss=15.0611 edge_loss=1.5922 device_loss=7.7940 align=225.6135 acc=0.6561 step_time=0.132s gpu_mem=5915.5MB
+step=18900 loss=15.0941 edge_loss=1.4521 device_loss=7.9128 align=228.3417 acc=0.6558 step_time=0.134s gpu_mem=5915.5MB
+step=19000 loss=15.0818 edge_loss=1.3157 device_loss=7.4797 align=232.9860 acc=0.7076 step_time=0.134s gpu_mem=5915.5MB
+step=19100 loss=15.0014 edge_loss=1.6047 device_loss=7.6450 align=225.3179 acc=0.6831 step_time=0.132s gpu_mem=5915.5MB
+step=19200 loss=14.9708 edge_loss=1.6436 device_loss=7.4536 align=224.6185 acc=0.6622 step_time=0.132s gpu_mem=5915.5MB
+step=19300 loss=16.1519 edge_loss=1.5710 device_loss=8.1142 align=245.5741 acc=0.6556 step_time=0.134s gpu_mem=5915.5MB
+step=19400 loss=16.2266 edge_loss=1.7088 device_loss=7.4300 align=248.8367 acc=0.6313 step_time=0.133s gpu_mem=5915.5MB
+step=19500 loss=15.3564 edge_loss=1.3275 device_loss=7.6799 align=237.2194 acc=0.7134 step_time=0.134s gpu_mem=5915.5MB
+step=19600 loss=16.5657 edge_loss=1.5111 device_loss=8.7113 align=252.1211 acc=0.6667 step_time=0.133s gpu_mem=5915.5MB
+step=19700 loss=15.1074 edge_loss=1.4164 device_loss=7.6749 align=230.3904 acc=0.6914 step_time=0.134s gpu_mem=5915.5MB
+step=19800 loss=16.8170 edge_loss=1.9138 device_loss=8.7896 align=248.9350 acc=0.6335 step_time=0.134s gpu_mem=5915.5MB
+step=19900 loss=14.3162 edge_loss=1.2659 device_loss=8.2409 align=214.6288 acc=0.7059 step_time=0.134s gpu_mem=5915.5MB
+step=20000 loss=15.2612 edge_loss=1.5051 device_loss=7.9177 align=230.1623 acc=0.6667 step_time=0.134s gpu_mem=5915.5MB
+saved_checkpoint=results/wikitext2_mdlm_medium/checkpoint.pt
+saved_metrics=results/wikitext2_mdlm_medium/train_metrics.csv
+{
+  "step": 20000,
+  "loss": 15.261210441589355,
+  "edge_loss": 1.5051114559173584,
+  "train_perplexity": 4.504655672840558,
+  "device_loss": 7.917685508728027,
+  "device_perplexity": 2745.409460418899,
+  "align_loss": 230.16233825683594,
+  "distill_loss": 6.644451141357422,
+  "token_acc": 0.6666666269302368,
+  "top1_acc": 0.6666666269302368,
+  "top5_acc": 0.849056601524353,
+  "train_top5_acc": 0.849056601524353,
+  "device_token_acc": 0.044025156646966934,
+  "device_top5_acc": 0.17610062658786774,
+  "step_time": 0.13394090184010565,
+  "gpu_memory_MB": 5915.5439453125,
+  "coarse_comm_MB_per_batch": 0.25,
+  "gradient_accumulation_steps": 4,
+  "model_backend": "mdlm",
+  "pretrained_edge_loaded": true,
+  "compression_ratio": 6.0,
+  "val_loss": 1.5501217770786915,
+  "val_perplexity": 4.712043966602081,
+  "val_token_acc": 0.667211511490508,
+  "val_top1_acc": 0.667211511490508,
+  "val_top5_acc": 0.8332788500570714
+}

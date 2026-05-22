@@ -16,6 +16,7 @@ training script.
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -155,6 +156,7 @@ class HFMDLMEdgeAdapter(nn.Module):
         super().__init__()
         self.model = model
         self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
         self.mask_token_id = mask_token_id
         self.fallback_hidden = nn.Linear(vocab_size, hidden_size)
 
@@ -222,6 +224,47 @@ def _load_hf_mdlm_model(model_name: str, local_files_only: bool = False) -> tupl
         except TypeError:
             model = AutoModelForMaskedLM.from_pretrained(model_name, **common_kwargs)
     return model, hf_config
+
+
+def _safe_apply_rotary_pos_emb(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    """Pure PyTorch replacement for MDLM remote code's flash-attn rotary kernel.
+
+    The local `mdlm-no_flashattn` checkpoint still routes rotary embeddings
+    through `flash_attn.layers.rotary.apply_rotary_emb_qkv_`.  That Triton
+    kernel is unnecessary because attention itself is already regular PyTorch,
+    and it can surface as delayed CUDA illegal-memory-access failures during
+    long fine-tuning runs.  This function preserves the same non-interleaved
+    rotary transform for Q/K and leaves V unchanged.
+    """
+    cos = cos[0, :, 0, 0, : cos.shape[-1] // 2]
+    sin = sin[0, :, 0, 0, : sin.shape[-1] // 2]
+    rotary_dim = cos.shape[-1] * 2
+
+    qk = qkv[:, :, :2, :, :rotary_dim]
+    qk_first, qk_second = qk.chunk(2, dim=-1)
+    cos = cos[None, :, None, None, :]
+    sin = sin[None, :, None, None, :]
+    rotated_qk = torch.cat(
+        (
+            qk_first * cos - qk_second * sin,
+            qk_second * cos + qk_first * sin,
+        ),
+        dim=-1,
+    )
+    if rotary_dim < qkv.shape[-1]:
+        rotated_qk = torch.cat((rotated_qk, qkv[:, :, :2, :, rotary_dim:]), dim=-1)
+    return torch.cat((rotated_qk, qkv[:, :, 2:, :, :]), dim=2)
+
+
+def _patch_mdlm_rotary_kernel(model: nn.Module) -> bool:
+    """Patch HF remote MDLM modules to avoid flash-attn rotary kernels."""
+    module = sys.modules.get(model.__class__.__module__)
+    if module is None or not hasattr(module, "apply_rotary_pos_emb"):
+        return False
+    if getattr(module.apply_rotary_pos_emb, "__name__", "") == _safe_apply_rotary_pos_emb.__name__:
+        return False
+    module.apply_rotary_pos_emb = _safe_apply_rotary_pos_emb
+    return True
 
 
 def _copy_extra_rows(new_tensor: torch.Tensor, old_rows: int, source_row: torch.Tensor) -> None:
@@ -308,6 +351,21 @@ def _resize_pretrained_mdlm_vocab(model: nn.Module, vocab_size: int, mask_token_
     except (AttributeError, NotImplementedError):
         input_embeddings = None
     source_token_id = pad_token_id if pad_token_id is not None else mask_token_id - 1
+
+    def sync_config_vocab() -> None:
+        if hasattr(model, "config"):
+            model.config.vocab_size = vocab_size
+            model.config.mask_token_id = mask_token_id
+            model.config.pad_token_id = pad_token_id
+        backbone = getattr(model, "backbone", None)
+        if backbone is not None:
+            if hasattr(backbone, "config"):
+                backbone.config.vocab_size = vocab_size
+                backbone.config.mask_token_id = mask_token_id
+                backbone.config.pad_token_id = pad_token_id
+            if hasattr(backbone, "vocab_size"):
+                backbone.vocab_size = vocab_size
+
     if input_embeddings is not None:
         old_vocab = input_embeddings.weight.size(0)
         if old_vocab != vocab_size:
@@ -321,8 +379,9 @@ def _resize_pretrained_mdlm_vocab(model: nn.Module, vocab_size: int, mask_token_
                 )
             except (AttributeError, NotImplementedError):
                 pass
-            model.config.vocab_size = vocab_size
+            sync_config_vocab()
             return f"resized HF token embeddings from {old_vocab} to {vocab_size}"
+        sync_config_vocab()
         return f"HF token embeddings already match vocab_size={vocab_size}"
 
     backbone = getattr(model, "backbone", None)
@@ -335,11 +394,9 @@ def _resize_pretrained_mdlm_vocab(model: nn.Module, vocab_size: int, mask_token_
             backbone.vocab_embed = _resize_embedding(vocab_embed, vocab_size, source_token_id)
             if isinstance(output_linear, nn.Linear):
                 output_layer.linear = _resize_linear(output_linear, vocab_size, source_token_id)
-            if hasattr(model, "config"):
-                model.config.vocab_size = vocab_size
-            if hasattr(backbone, "config"):
-                backbone.config.vocab_size = vocab_size
+            sync_config_vocab()
             return f"resized MDLM vocab_embed from {old_vocab} to {vocab_size}"
+        sync_config_vocab()
         return f"MDLM vocab_embed already matches vocab_size={vocab_size}"
     if vocab_embed is not None and isinstance(getattr(vocab_embed, "embedding", None), nn.Parameter):
         old_vocab = vocab_embed.embedding.size(0)
@@ -347,15 +404,45 @@ def _resize_pretrained_mdlm_vocab(model: nn.Module, vocab_size: int, mask_token_
             _resize_embedding_parameter_layer(vocab_embed, vocab_size, source_token_id)
             if isinstance(output_linear, nn.Linear):
                 output_layer.linear = _resize_linear(output_linear, vocab_size, source_token_id)
-            if hasattr(model, "config"):
-                model.config.vocab_size = vocab_size
-            if hasattr(backbone, "config"):
-                backbone.config.vocab_size = vocab_size
-                backbone.vocab_size = vocab_size
+            sync_config_vocab()
             return f"resized MDLM custom vocab_embed from {old_vocab} to {vocab_size}"
+        sync_config_vocab()
         return f"MDLM custom vocab_embed already matches vocab_size={vocab_size}"
 
     return "could not find a resizable HF/MDLM token embedding; assuming checkpoint vocab is compatible"
+
+
+def _assert_pretrained_mdlm_vocab(model: nn.Module, vocab_size: int, mask_token_id: int) -> None:
+    """Fail early if any known MDLM vocab surface cannot represent `[MASK]`."""
+    if mask_token_id >= vocab_size:
+        raise ValueError(f"mask_token_id={mask_token_id} is outside vocab_size={vocab_size}")
+
+    checks: list[tuple[str, int]] = []
+    try:
+        input_embeddings = model.get_input_embeddings()
+    except (AttributeError, NotImplementedError):
+        input_embeddings = None
+    if input_embeddings is not None:
+        checks.append(("input_embeddings", input_embeddings.weight.size(0)))
+
+    backbone = getattr(model, "backbone", None)
+    vocab_embed = getattr(backbone, "vocab_embed", None)
+    if isinstance(vocab_embed, nn.Embedding):
+        checks.append(("backbone.vocab_embed", vocab_embed.weight.size(0)))
+    elif vocab_embed is not None and isinstance(getattr(vocab_embed, "embedding", None), nn.Parameter):
+        checks.append(("backbone.vocab_embed.embedding", vocab_embed.embedding.size(0)))
+
+    output_linear = getattr(getattr(backbone, "output_layer", None), "linear", None)
+    if isinstance(output_linear, nn.Linear):
+        checks.append(("backbone.output_layer.linear", output_linear.out_features))
+
+    bad = [f"{name}={size}" for name, size in checks if size <= mask_token_id or size != vocab_size]
+    if bad:
+        raise ValueError(
+            "Pretrained MDLM vocab mismatch after resize: "
+            + ", ".join(bad)
+            + f"; expected vocab_size={vocab_size}, mask_token_id={mask_token_id}"
+        )
 
 
 def try_load_pretrained_mdlm(
@@ -372,10 +459,12 @@ def try_load_pretrained_mdlm(
         model_name = str(Path(path_or_name)) if is_local else path_or_name
         model, hf_config = _load_hf_mdlm_model(model_name, local_files_only=local_files_only)
         resize_message = _resize_pretrained_mdlm_vocab(model, vocab_size, mask_token_id, pad_token_id)
+        _assert_pretrained_mdlm_vocab(model, vocab_size, mask_token_id)
+        rotary_message = "patched flash-attn rotary kernel" if _patch_mdlm_rotary_kernel(model) else "rotary kernel already safe"
         hidden_size = _config_get(hf_config, "hidden_size", "hidden_dim", "d_model", "n_embd", default=768)
         message = (
             f"loaded pretrained edge MDLM from {model_name} via HF_ENDPOINT={os.environ.get('HF_ENDPOINT')}; "
-            f"{resize_message}"
+            f"{resize_message}; {rotary_message}"
         )
         return HFMDLMEdgeAdapter(model, hidden_size, vocab_size, mask_token_id), hidden_size, message
     except Exception as exc:  # noqa: BLE001 - this is intentionally best effort.

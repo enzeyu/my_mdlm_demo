@@ -3,3 +3,7 @@
 *.ckpt
 results/**/checkpoint.pt
 results/**/checkpoints/
+__pycache__
+.agents
+.codex
+
