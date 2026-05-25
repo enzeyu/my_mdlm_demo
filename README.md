@@ -1,222 +1,122 @@
-# Coarse-to-Fine Edge-Device Diffusion LM Prototype
+# AR-Guided Diffusion Verification
 
-This is a minimal real PyTorch experiment for coarse-to-fine masked diffusion
-language modeling. It trains on WikiText-2 with a GPT-2 tokenizer and runs on
-CUDA automatically when available.
+This repository now focuses on one evaluation-only idea:
 
-The project now supports two backends:
+> Use a local GPT-2 small model as an autoregressive candidate generator, and use
+> a local MDLM masked diffusion model as the parallel verifier/reranker.
 
-- `internal_toy`: the original small Transformer sanity-check baseline.
-- `mdlm`: an MDLM-style masked diffusion backend. With
-  `require_pretrained_edge: true`, it must load a real Hugging Face or local
-  pretrained MDLM checkpoint; otherwise the run fails instead of silently using
-  a randomly initialized edge model.
+The first implementation does not train a new module. It evaluates whether
+GPT-2 top-k candidates help MDLM recover high-uncertainty masked tokens.
 
-## Idea
+## Local Assets
 
-The device model is a lightweight masked diffusion LM. It receives a masked
-token sequence and emits:
+Keep Hugging Face assets under `/mnt/data/enzeyu/hf_downloads`:
 
-- low-dimensional `coarse representation`
-- optional device token logits for the `device_only` baseline
+- Models: `/mnt/data/enzeyu/hf_downloads/models`
+- Datasets: `/mnt/data/enzeyu/hf_downloads/datasets`
 
-The edge model is either the legacy larger Transformer baseline or an MDLM-style
-edge denoiser. In `model_backend: mdlm`, the code uses the same tokenizer,
-absorbing `[MASK]` noising process, masked denoising objective, and checkpoint
-for `device_only`, `edge_only`, and `coarse_to_fine`.
+Expected local models:
 
-The main research question is:
-
-> Can a low-dimensional coarse representation reduce communication while
-> preserving or improving token-level denoising quality after edge refinement?
-
-## Files
-
-- `configs/wikitext2_coarse.yaml`: default runnable experiment config.
-- `configs/wikitext2_mdlm_medium.yaml`: MDLM backend experiment config.
-- `data_real.py`: WikiText-2 loading, GPT-2 tokenizer, fixed-length token blocks,
-  and masked diffusion corruption.
-- `model_coarse_to_fine.py`: device Transformer, edge Transformer, coarse
-  conditioning, backend dispatch, losses, and communication-size helpers.
-- `models_mdlm_wrapper.py`: MDLM-style DiT denoiser, Hugging Face/local
-  checkpoint loading, lightweight device model, edge wrapper, and coarse adapter.
-- `train_coarse_to_fine.py`: CUDA-aware training script.
-- `eval_coarse_to_fine.py`: evaluates `device_only`, `edge_only`, and
-  `coarse_to_fine`.
-- `run_coarse_dim_ablation.py`: optional coarse-dimension ablation runner.
-- `metrics.py`: metric saving and table formatting.
-
-## Train
-
-```bash
-python train_coarse_to_fine.py --config configs/wikitext2_coarse.yaml
+```text
+/mnt/data/enzeyu/hf_downloads/models/gpt2
+/mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
 ```
 
-MDLM backend:
-
-```bash
-python train_coarse_to_fine.py \
-  --config configs/wikitext2_mdlm_medium.yaml
-```
-
-The script prints:
-
-- training loss
-- edge token loss
-- device token loss
-- coarse alignment loss
-- masked token accuracy
-- step time
-- GPU memory
-
-It saves:
-
-- `results/wikitext2_coarse/checkpoint.pt`
-- `results/wikitext2_coarse/train_metrics.csv`
-- `results/wikitext2_coarse/train_metrics.json`
-- `results/wikitext2_coarse/train_metrics.jsonl`
-
-For `configs/wikitext2_mdlm_medium.yaml`, outputs are written under
-`results/wikitext2_mdlm_medium/`.
-
-## Evaluate
-
-```bash
-python eval_coarse_to_fine.py --config configs/wikitext2_coarse.yaml
-```
-
-Or with an explicit checkpoint:
-
-```bash
-python eval_coarse_to_fine.py \
-  --config configs/wikitext2_mdlm_medium.yaml \
-  --ckpt results/wikitext2_mdlm_medium/checkpoint.pt
-```
-
-Evaluation always reports `device_only`, `edge_only`, and `coarse_to_fine`.
-
-## MDLM Checkpoints and hf-mirror
-
-The code sets `HF_ENDPOINT=https://hf-mirror.com` by default before importing
-`transformers`. The medium config uses
-`kuleshov-group/mdlm-no_flashattn-fp32-owt`, which avoids the flash-attn
-dependency required by the original `kuleshov-group/mdlm-owt` remote code.
-
-The medium config currently points to local downloads:
+The evaluation config sets:
 
 ```yaml
 tokenizer_name: /mnt/data/enzeyu/hf_downloads/models/gpt2
+dataset_cache_dir: /mnt/data/enzeyu/hf_downloads/datasets
 hf_local_files_only: true
 pretrained_edge_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
+device_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/gpt2
 ```
 
-Run this first to confirm the edge model is truly pretrained:
+If WikiText is not available under the dataset cache and the environment cannot
+download it, the evaluator writes a skipped result instead of falling back to
+`/home/enzeyu/.cache`.
 
-```bash
-HF_ENDPOINT=https://huggingface.co \
-python validate_pretrained_mdlm.py \
-  --config configs/wikitext2_mdlm_medium.yaml \
-  --forward-check
-```
+## Files
 
-Expected validation output should include:
+- `eval_gpt2_assist.py`: main evaluation entrypoint.
+- `configs/wikitext2_mdlm_gpt2_assist.yaml`: AR-guided verification config.
+- `data_real.py`: tokenizer, WikiText loading, fixed-length blocks, and masked
+  token corruption.
+- `models_mdlm_wrapper.py`: local/Hugging Face MDLM edge verifier loader.
+- `metrics.py`: table formatting and small metric helpers.
+- `validate_pretrained_mdlm.py`: optional smoke test for the local MDLM.
 
-```text
-model_backend=mdlm
-pretrained_edge_loaded=True
-```
+Old coarse-hidden injection training/evaluation scripts have been removed.
 
-After validation succeeds, start pretrained MDLM training from the project root:
+## Evaluation Modes
 
-```bash
-cd /mnt/data/enzeyu/my_researchs/mydllm/my_mdlm_demo
+`eval_gpt2_assist.py` reports four modes:
 
-python train_coarse_to_fine.py \
-  --config configs/wikitext2_mdlm_medium.yaml
-```
+- `edge_only`: MDLM predicts masked tokens from bidirectional masked context.
+- `gpt2_only`: GPT-2 predicts each masked position from left context only.
+- `random_assist`: MDLM logits are biased using random candidate ids.
+- `gpt2_assist`: GPT-2 proposes top-k candidates for high-uncertainty masked
+  positions; MDLM logits rerank them through an additive candidate bias.
 
-If you want to keep the old randomly initialized pre-experiment results, change
-`save_dir` in `configs/wikitext2_mdlm_medium.yaml` before training, for example:
+For hard token selection, `uncertainty_score` supports:
+
+- `entropy`
+- `inverse_confidence`
+- `margin`
+
+Important config fields:
 
 ```yaml
-save_dir: results/wikitext2_mdlm_medium_pretrained
+uncertainty_score: entropy
+hard_token_ratio: 0.3
+device_top_k: 20
+gpt2_assist_alpha: 0.5
+eval_steps: 200
 ```
 
-Then evaluate the new pretrained run with:
+## Run
+
+Main command:
 
 ```bash
-python eval_coarse_to_fine.py \
-  --config configs/wikitext2_mdlm_medium.yaml \
-  --ckpt results/wikitext2_mdlm_medium_pretrained/checkpoint.pt
-```
-
-If you keep the default `save_dir`, use:
-
-```bash
-python eval_coarse_to_fine.py \
-  --config configs/wikitext2_mdlm_medium.yaml \
+python eval_gpt2_assist.py \
+  --config configs/wikitext2_mdlm_gpt2_assist.yaml \
   --ckpt results/wikitext2_mdlm_medium/checkpoint.pt
 ```
 
-To use a manually downloaded checkpoint, set:
+The checkpoint argument is optional if you only want to use the configured local
+pretrained MDLM. When present, matching `edge_model.*` weights are loaded and old
+non-edge keys are ignored.
 
-```yaml
-use_pretrained_edge: true
-require_pretrained_edge: true
-pretrained_edge_path: /path/to/local/mdlm/checkpoint_or_snapshot
-```
-
-With `require_pretrained_edge: true`, if neither Hugging Face nor the local path
-is available, training stops with an explicit error. The script prints:
-
-- whether `model_backend` is `internal_toy` or `mdlm`;
-- whether pretrained edge MDLM was loaded;
-- whether the current edge model is still the toy model.
-
-## Metrics
-
-- `validation_loss`: masked-token cross entropy on validation batches.
-- `masked_token_accuracy`: accuracy only on tokens corrupted by `[MASK]`.
-- `denoising_accuracy`: same as masked-token accuracy in this minimal prototype.
-- `refinement_latency`: average forward/loss latency per validation batch.
-- `tokens_per_sec`: masked denoising targets processed per second.
-- `gpu_memory_MB`: peak allocated CUDA memory.
-- `coarse_comm_MB`: size of transmitted coarse representation per batch.
-- `compression_ratio`: edge hidden size divided by coarse dimension.
-- `gain_over_edge_only`: top-1 accuracy improvement over edge-only.
-- `quality_gain_per_MB`: `gain_over_edge_only / communication_MB`.
-
-`eval_coarse_to_fine.py` saves:
-
-- `benchmark_results.csv`
-- `benchmark_results.json`
-- `benchmark_summary.txt`
-- `eval_metrics.csv`
-- `eval_metrics.json`
-
-The CSV schema is:
-
-```text
-mode,model_backend,loss,perplexity,top1_acc,top5_acc,latency,tokens_per_sec,gpu_memory_MB,communication_MB,compression_ratio,gain_over_edge_only,quality_gain_per_MB
-```
-
-## Coarse-Dim Ablation
+Optional MDLM smoke test:
 
 ```bash
-python run_coarse_dim_ablation.py \
-  --base_config configs/wikitext2_mdlm_medium.yaml \
-  --coarse_dims 64 128 256
+python validate_pretrained_mdlm.py \
+  --config configs/wikitext2_mdlm_gpt2_assist.yaml \
+  --forward-check
 ```
 
-This writes `coarse_dim_ablation.csv` and `coarse_dim_ablation.json` next to the
-configured result directory.
+## Outputs
 
-## Next Research Extensions
+Results are written to:
 
-1. Replace additive conditioning with cross-attention or prefix tokens for HF
-   checkpoints whose forward API exposes stable hidden-state injection.
-2. Add iterative MDLM sampling schedules instead of single-step denoising eval.
-3. Pretrain or freeze a stronger edge model to study whether coarse semantics
-   transfer across heterogeneous model sizes.
-4. Compare against transmitting edge hidden states, logits, or selected token
-   positions under equal communication budgets.
+```text
+results/wikitext2_mdlm_gpt2_assist/
+```
+
+Files:
+
+- `gpt2_assist_eval.csv`
+- `gpt2_assist_eval.json`
+- `gpt2_assist_summary.md`
+
+The benchmark table includes:
+
+```text
+mode,loss,perplexity,top1_acc,top5_acc,hard_top1_acc,hard_top5_acc,correction_rate,regression_rate,query_ratio,communication_MB,quality_gain_per_MB,latency,tokens_per_sec
+```
+
+The summary answers whether `gpt2_assist` improves over `edge_only` and
+`random_assist`, whether gains concentrate on hard tokens, whether correction
+beats regression, and whether the result supports the AR-guided assistance
+hypothesis.

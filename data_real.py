@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Tuple
 
 import torch
@@ -53,14 +54,89 @@ def load_tokenizer(tokenizer_name: str, local_files_only: bool = False):
     return tokenizer
 
 
-def load_wikitext_splits(dataset_name: str, max_train_examples: int, max_val_examples: int):
-    """Load WikiText-style train/validation text splits from HuggingFace datasets."""
+def _wikitext_config_name(dataset_name: str) -> str | None:
+    if dataset_name in {"wikitext-2", "wikitext2"}:
+        return "wikitext-2-raw-v1"
+    if dataset_name in {"wikitext-103", "wikitext103"}:
+        return "wikitext-103-raw-v1"
+    return None
+
+
+def _local_wikitext_parquet_files(config_name: str, cache_dir: str | None) -> dict[str, list[str]] | None:
+    """Find manually downloaded WikiText parquet files from hf_downloads/datasets."""
+    if not cache_dir:
+        return None
+    cache_path = Path(cache_dir)
+    candidates = [
+        cache_path / config_name,
+        cache_path / "wikitext" / config_name,
+    ]
+    local_dir = next((path for path in candidates if path.exists()), None)
+    if local_dir is None:
+        return None
+
+    data_files = {}
+    for split in ["train", "validation", "test"]:
+        files = sorted(str(path) for path in local_dir.rglob(f"{split}-*.parquet"))
+        if files:
+            data_files[split] = files
+    if "train" not in data_files or ("validation" not in data_files and "test" not in data_files):
+        raise RuntimeError(
+            f"Local WikiText directory {local_dir} is incomplete; expected train and validation/test parquet files."
+        )
+    return data_files
+
+
+def _load_local_wikitext_parquet(config_name: str, cache_dir: str | None):
+    """Load manually downloaded WikiText parquet files from hf_downloads/datasets."""
+    data_files = _local_wikitext_parquet_files(config_name, cache_dir)
+    if data_files is None:
+        return None
+
     from datasets import load_dataset
 
-    if dataset_name == "wikitext-2":
-        dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
+    return load_dataset(
+        "parquet",
+        data_files=data_files,
+        cache_dir=str(cache_path / "parquet_cache" / config_name),
+        verification_mode="no_checks",
+    )
+
+
+def _read_parquet_texts(files: list[str], limit: int) -> list[str]:
+    """Read text rows from parquet directly, avoiding datasets/pandas cache paths."""
+    import pyarrow.parquet as pq
+
+    texts = []
+    for file_path in files:
+        table = pq.ParquetFile(file_path).read(columns=["text"])
+        for value in table.column("text").to_pylist():
+            text = str(value).strip() if value is not None else ""
+            if text:
+                texts.append(text)
+            if len(texts) >= limit:
+                return texts
+    return texts
+
+
+def load_wikitext_splits(dataset_name: str, max_train_examples: int, max_val_examples: int, cache_dir: str | None = None):
+    """Load WikiText-style train/validation text splits from HuggingFace datasets."""
+    load_kwargs = {"cache_dir": cache_dir} if cache_dir else {}
+    config_name = _wikitext_config_name(dataset_name)
+    if config_name:
+        local_files = _local_wikitext_parquet_files(config_name, cache_dir)
+        if local_files is not None:
+            val_key = "validation" if "validation" in local_files else "test"
+            train_texts = _read_parquet_texts(local_files["train"], max_train_examples)
+            val_texts = _read_parquet_texts(local_files[val_key], max_val_examples)
+            return train_texts, val_texts
+        from datasets import load_dataset
+
+        dataset = load_dataset("wikitext", config_name, **load_kwargs)
     else:
-        dataset = load_dataset(dataset_name)
+        from datasets import load_dataset
+
+        dataset = load_dataset(dataset_name, **load_kwargs)
 
     train_texts = _take_nonempty(dataset["train"], max_train_examples)
     val_split = "validation" if "validation" in dataset else "test"
@@ -100,6 +176,8 @@ def tokenize_to_blocks(texts, tokenizer, max_length: int, max_blocks: int) -> to
 
 def build_dataloaders(config: Dict) -> Tuple[DataLoader, DataLoader, object, TokenizerInfo]:
     """Build tokenizer plus train/validation dataloaders from the YAML config."""
+    dataset_cache_dir = config.get("dataset_cache_dir", "/mnt/data/enzeyu/hf_downloads/datasets")
+    os.environ.setdefault("HF_DATASETS_CACHE", str(dataset_cache_dir))
     # 加载tokenizer 和 训练、验证文本, 切成固定长度的块
     tokenizer = load_tokenizer(
         config["tokenizer_name"],
@@ -109,6 +187,7 @@ def build_dataloaders(config: Dict) -> Tuple[DataLoader, DataLoader, object, Tok
         config.get("dataset_name", "wikitext-2"),
         int(config.get("max_train_examples", 2000)),
         int(config.get("max_val_examples", 500)),
+        cache_dir=str(dataset_cache_dir),
     )
     max_length = int(config["max_length"])
     train_blocks = tokenize_to_blocks(train_texts, tokenizer, max_length, int(config.get("max_train_blocks", 4096)))

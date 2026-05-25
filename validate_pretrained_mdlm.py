@@ -8,7 +8,7 @@ import torch
 import yaml
 
 from data_real import load_tokenizer
-from model_coarse_to_fine import build_model_from_config
+from models_mdlm_wrapper import build_edge_mdlm_model
 
 
 def choose_device() -> torch.device:
@@ -29,7 +29,7 @@ def main() -> None:
         config["tokenizer_name"],
         local_files_only=bool(config.get("hf_local_files_only", False)),
     )
-    model = build_model_from_config(
+    model = build_edge_mdlm_model(
         config,
         len(tokenizer),
         int(tokenizer.pad_token_id),
@@ -52,7 +52,7 @@ def main() -> None:
         input_ids[:, seq_len // 2] = int(tokenizer.mask_token_id)
         timesteps = torch.full((1,), float(config["mask_ratio"]), device=device)
         with torch.no_grad():
-            outputs = model(input_ids, timesteps, mode="edge_only")
+            outputs = model(input_ids, timesteps)
         print(f"forward_logits_shape={tuple(outputs['logits'].shape)}")
 
 

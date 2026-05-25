@@ -1,4 +1,4 @@
-"""MDLM-style backend for edge-device masked diffusion LM experiments.
+"""MDLM-style backend for AR-guided edge verification experiments.
 
 This module keeps the project self-contained while supporting three edge cases:
 
@@ -7,10 +7,10 @@ This module keeps the project self-contained while supporting three edge cases:
    `HF_ENDPOINT=https://hf-mirror.com` for mainland China networks;
 3. optionally fall back to a randomly initialized MDLM-style DiT denoiser.
 
-The fallback is not the old toy Transformer: it uses an MDLM-style absorbing
+The fallback uses an MDLM-style absorbing
 mask corruption interface, timestep conditioning, DiT adaptive layer norm
 blocks, tied token embeddings, and masked-token SUBS-style loss usage in the
-training script.
+evaluation code.
 """
 
 from __future__ import annotations
@@ -40,12 +40,8 @@ def prefer_hf_mirror() -> None:
 class MDLMBackendConfig:
     vocab_size: int
     max_length: int
-    coarse_dim: int
-    device_hidden_size: int
     edge_hidden_size: int
-    device_layers: int
     edge_layers: int
-    device_heads: int
     edge_heads: int
     dropout: float
     pad_token_id: int
@@ -54,7 +50,6 @@ class MDLMBackendConfig:
     use_pretrained_edge: bool = False
     require_pretrained_edge: bool = False
     hf_local_files_only: bool = False
-    conditioning: str = "hidden"
 
 
 class TimestepEmbedder(nn.Module):
@@ -178,9 +173,8 @@ class HFMDLMEdgeAdapter(nn.Module):
             outputs = self.model(input_ids=input_ids, timesteps=timesteps)
         logits = outputs.logits if hasattr(outputs, "logits") else outputs[0]
         if conditioning is not None:
-            # Official HF forward signatures do not expose a stable hidden-state
-            # injection point, so coarse-to-fine conditioning is applied as a
-            # learned residual in the wrapper container after this call.
+            # Official HF forward signatures do not expose a stable external
+            # conditioning point; candidate verification uses logits only.
             pass
         hidden_states = getattr(outputs, "hidden_states", None)
         if hidden_states:
@@ -471,8 +465,8 @@ def try_load_pretrained_mdlm(
         return None, 0, f"failed to load pretrained edge MDLM from {path_or_name}: {exc}"
 
 
-class MDLMCoarseToFineModel(nn.Module):
-    """Device-lightweight + edge-MDLM wrapper with three evaluation modes."""
+class EdgeMDLMModel(nn.Module):
+    """Edge-only MDLM wrapper used to verify and rerank GPT-2 candidates."""
 
     def __init__(self, config: MDLMBackendConfig):
         super().__init__()
@@ -480,20 +474,6 @@ class MDLMCoarseToFineModel(nn.Module):
         self.backend_name = "mdlm"
         self.pretrained_loaded = False
         self.load_message = "pretrained loading not requested"
-
-        self.device_model = MDLMStyleDenoiser(
-            config.vocab_size,
-            config.max_length,
-            config.device_hidden_size,
-            config.device_layers,
-            config.device_heads,
-            config.dropout,
-            config.pad_token_id,
-            config.mask_token_id,
-        )
-        self.device_to_coarse = nn.Linear(config.device_hidden_size, config.coarse_dim)
-        self.device_lm_head = nn.Linear(config.device_hidden_size, config.vocab_size, bias=False)
-        self.device_lm_head.weight = self.device_model.token_embed.weight
 
         edge_model: nn.Module | None = None
         edge_hidden = config.edge_hidden_size
@@ -531,53 +511,14 @@ class MDLMCoarseToFineModel(nn.Module):
 
         self.edge_hidden_size = edge_hidden
         self.edge_model = edge_model
-        self.coarse_to_edge = nn.Linear(config.coarse_dim, edge_hidden)
-        self.coarse_to_logits = nn.Linear(edge_hidden, config.vocab_size, bias=False)
-        self.edge_to_coarse = nn.Linear(edge_hidden, config.coarse_dim)
 
-    def forward(self, input_ids: torch.Tensor, timesteps: torch.Tensor, mode: str = "coarse_to_fine"):
-        if mode == "device_only":
-            device_logits, device_hidden = self.device_model(input_ids, timesteps)
-            coarse = self.device_to_coarse(device_hidden)
-            return {"logits": device_logits, "device_logits": device_logits, "coarse": coarse}
-
-        if mode == "edge_only":
-            edge_logits, edge_hidden = self.edge_model(input_ids, timesteps, conditioning=None)
-            edge_coarse = self.edge_to_coarse(edge_hidden)
-            return {
-                "logits": edge_logits,
-                "device_logits": None,
-                "coarse": None,
-                "edge_hidden": edge_hidden,
-                "edge_coarse": edge_coarse,
-            }
-
-        if mode != "coarse_to_fine":
-            raise ValueError(f"Unknown mode: {mode}")
-
-        device_logits, device_hidden = self.device_model(input_ids, timesteps)
-        coarse = self.device_to_coarse(device_hidden)
-        conditioning = self.coarse_to_edge(coarse)
-        if isinstance(self.edge_model, HFMDLMEdgeAdapter):
-            edge_logits, edge_hidden = self.edge_model(input_ids, timesteps, conditioning=None)
-            cond_logits = self.coarse_to_logits(conditioning)
-            common_vocab = min(edge_logits.size(-1), cond_logits.size(-1))
-            edge_logits = edge_logits.clone()
-            edge_logits[..., :common_vocab] = edge_logits[..., :common_vocab] + cond_logits[..., :common_vocab]
-        else:
-            edge_logits, edge_hidden = self.edge_model(input_ids, timesteps, conditioning=conditioning)
-        edge_coarse = self.edge_to_coarse(edge_hidden)
-        return {
-            "logits": edge_logits,
-            "device_logits": device_logits,
-            "coarse": coarse,
-            "edge_hidden": edge_hidden,
-            "edge_coarse": edge_coarse,
-        }
+    def forward(self, input_ids: torch.Tensor, timesteps: torch.Tensor):
+        edge_logits, edge_hidden = self.edge_model(input_ids, timesteps, conditioning=None)
+        return {"logits": edge_logits, "edge_hidden": edge_hidden}
 
 
-def build_mdlm_backend(config: dict, vocab_size: int, pad_token_id: int, mask_token_id: int) -> MDLMCoarseToFineModel:
-    """Build MDLM backend from YAML values and tokenizer metadata."""
+def build_edge_mdlm_model(config: dict, vocab_size: int, pad_token_id: int, mask_token_id: int) -> EdgeMDLMModel:
+    """Build an edge-only MDLM verifier from YAML values and tokenizer metadata."""
     edge_hidden = config.get("edge_hidden_size", 768)
     if edge_hidden == "auto":
         edge_hidden = 768
@@ -590,12 +531,8 @@ def build_mdlm_backend(config: dict, vocab_size: int, pad_token_id: int, mask_to
     cfg = MDLMBackendConfig(
         vocab_size=vocab_size,
         max_length=int(config["max_length"]),
-        coarse_dim=int(config["coarse_dim"]),
-        device_hidden_size=int(config["device_hidden_size"]),
         edge_hidden_size=int(edge_hidden),
-        device_layers=int(config["device_layers"]),
         edge_layers=int(edge_layers),
-        device_heads=int(config.get("device_heads", 4)),
         edge_heads=int(edge_heads),
         dropout=float(config.get("dropout", 0.1)),
         pad_token_id=pad_token_id,
@@ -604,9 +541,8 @@ def build_mdlm_backend(config: dict, vocab_size: int, pad_token_id: int, mask_to
         use_pretrained_edge=bool(config.get("use_pretrained_edge", False)),
         require_pretrained_edge=bool(config.get("require_pretrained_edge", False)),
         hf_local_files_only=bool(config.get("hf_local_files_only", False)),
-        conditioning=str(config.get("coarse_conditioning", "hidden")),
     )
-    return MDLMCoarseToFineModel(cfg)
+    return EdgeMDLMModel(cfg)
 
 
 def mdlm_subs_parameterization_loss(
