@@ -16,7 +16,7 @@ import torch
 import torch.nn.functional as F
 import yaml
 
-from data_real import build_dataloaders
+from data_real import build_dataloaders, mask_tokens
 from eval_gpt2_assist import check_tokenizer_compatibility, choose_device
 from metrics import format_table, now, sync_if_cuda
 from models_mdlm_wrapper import build_edge_mdlm_model
@@ -29,12 +29,20 @@ EVAL_COLUMNS = [
     "perplexity",
     "top1_acc",
     "top5_acc",
+    "refined_token_ratio",
     "refined_token_top1",
     "refined_token_top5",
     "correction_rate",
     "regression_rate",
     "error_detection_precision",
     "error_detection_recall",
+    "gpt2_error_detection_precision",
+    "gpt2_error_detection_recall",
+    "net_correction",
+    "mdlm_standard_top1",
+    "mdlm_standard_top5",
+    "mdlm_draft_context_top1",
+    "mdlm_draft_context_top5",
     "estimated_mdlm_compute_saved",
     "latency",
     "tokens_per_sec",
@@ -51,6 +59,7 @@ def load_config(path: str) -> dict:
     config.setdefault("uncertainty_score", "inverse_confidence")
     config.setdefault("refine_ratios", [0.05, 0.1, 0.2, 0.3])
     config.setdefault("gpt2_query_batch_size", 0)
+    config.setdefault("mask_ratio", 0.15)
     return config
 
 
@@ -75,15 +84,49 @@ def load_gpt2(config: dict, tokenizer, device: torch.device):
 
 def load_mdlm(config: dict, tokenizer_info, device: torch.device, ckpt_path: Path | None):
     model = build_edge_mdlm_model(config, tokenizer_info.vocab_size, tokenizer_info.pad_token_id, tokenizer_info.mask_token_id).to(device)
+    print(f"edge_model_status={getattr(model, 'load_message', 'unknown')}")
     if ckpt_path is not None and ckpt_path.exists():
         checkpoint = torch.load(ckpt_path, map_location=device)
-        missing, unexpected = model.load_state_dict(checkpoint["model_state"], strict=False)
+        if isinstance(checkpoint, dict):
+            state_dict = None
+            for key in ("model_state", "state_dict", "model"):
+                if key in checkpoint:
+                    state_dict = checkpoint[key]
+                    break
+            if state_dict is None:
+                state_dict = checkpoint
+        else:
+            state_dict = checkpoint
+        if state_dict is None:
+            raise KeyError(f"Could not find a model state dict in checkpoint: {ckpt_path}")
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
         if missing or unexpected:
             print(f"checkpoint_load_warning missing={len(missing)} unexpected={len(unexpected)}")
+        print(f"checkpoint_load_status=loaded path={ckpt_path}")
     elif ckpt_path is not None:
         print(f"checkpoint_load_skipped missing_path={ckpt_path}")
     model.eval()
     return model
+
+
+def validate_model_surfaces(mdlm_model, gpt2_model, tokenizer, tokenizer_info, device: torch.device, max_length: int) -> None:
+    """Print and assert the tokenizer/logit surfaces used by the evaluator."""
+    sample = torch.full((1, min(8, max_length)), int(tokenizer_info.mask_token_id), device=device, dtype=torch.long)
+    timesteps = torch.ones((1,), device=device)
+    with torch.no_grad():
+        mdlm_vocab = int(mdlm_model(sample, timesteps)["logits"].shape[-1])
+    tokenizer_vocab = int(tokenizer_info.vocab_size)
+    gpt2_vocab = int(gpt2_model.config.vocab_size)
+    print(
+        "eval_surface_check "
+        f"tokenizer_vocab={tokenizer_vocab} gpt2_vocab={gpt2_vocab} mdlm_logits_vocab={mdlm_vocab} "
+        f"pad_token_id={int(tokenizer_info.pad_token_id)} mask_token_id={int(tokenizer_info.mask_token_id)} "
+        f"tokenizer_mask_id={tokenizer.mask_token_id}"
+    )
+    if mdlm_vocab != tokenizer_vocab:
+        raise ValueError(f"MDLM logits vocab={mdlm_vocab} does not match tokenizer vocab={tokenizer_vocab}")
+    if int(tokenizer_info.mask_token_id) >= tokenizer_vocab:
+        raise ValueError(f"mask_token_id={tokenizer_info.mask_token_id} is outside tokenizer vocab={tokenizer_vocab}")
 
 
 @torch.no_grad()
@@ -261,6 +304,10 @@ def finalize(mode: str, ratio: float, acc: dict) -> dict:
     refined_tokens = max(int(acc["refined_tokens"]), 1)
     loss = acc["loss_sum"] / tokens
     refined_ratio = acc["refined_tokens"] / tokens
+    correction_rate = acc["corrected"] / max(acc["gpt2_wrong_selected"], 1)
+    regression_rate = acc["regressed"] / max(acc["gpt2_correct_selected"], 1)
+    error_precision = acc["selected_errors"] / max(acc["refined_tokens"], 1)
+    error_recall = acc["selected_errors"] / max(acc["gpt2_errors"], 1)
     return {
         "mode": mode,
         "refine_ratio": ratio,
@@ -268,22 +315,44 @@ def finalize(mode: str, ratio: float, acc: dict) -> dict:
         "perplexity": float(math.exp(min(loss, 50.0))),
         "top1_acc": acc["top1_sum"] / tokens,
         "top5_acc": acc["top5_sum"] / tokens,
+        "refined_token_ratio": refined_ratio,
         "refined_token_top1": acc["refined_top1_sum"] / refined_tokens,
         "refined_token_top5": acc["refined_top5_sum"] / refined_tokens,
-        "correction_rate": acc["corrected"] / max(acc["gpt2_wrong_selected"], 1),
-        "regression_rate": acc["regressed"] / max(acc["gpt2_correct_selected"], 1),
-        "error_detection_precision": acc["selected_errors"] / max(acc["refined_tokens"], 1),
-        "error_detection_recall": acc["selected_errors"] / max(acc["gpt2_errors"], 1),
+        "correction_rate": correction_rate,
+        "regression_rate": regression_rate,
+        "error_detection_precision": error_precision,
+        "error_detection_recall": error_recall,
+        "gpt2_error_detection_precision": error_precision,
+        "gpt2_error_detection_recall": error_recall,
+        "net_correction": correction_rate - regression_rate,
+        "mdlm_standard_top1": "",
+        "mdlm_standard_top5": "",
+        "mdlm_draft_context_top1": "",
+        "mdlm_draft_context_top5": "",
         "estimated_mdlm_compute_saved": 1.0 - refined_ratio,
         "latency": acc["latency"] / max(acc["batches"], 1),
         "tokens_per_sec": acc["tokens"] / max(acc["latency"], 1e-12),
     }
 
 
+def attach_diagnostic_metrics(rows: list[dict]) -> None:
+    standard = next(row for row in rows if row["mode"] == "mdlm_only")
+    draft_rows = [row for row in rows if row["mode"] == "gpt2_mdlm_refine"]
+    best_draft = max(draft_rows, key=lambda row: row["top5_acc"]) if draft_rows else None
+    for row in rows:
+        row["mdlm_standard_top1"] = standard["top1_acc"]
+        row["mdlm_standard_top5"] = standard["top5_acc"]
+        if best_draft is not None:
+            row["mdlm_draft_context_top1"] = best_draft["refined_token_top1"]
+            row["mdlm_draft_context_top5"] = best_draft["refined_token_top5"]
+
+
 @torch.no_grad()
 def evaluate(gpt2_model, mdlm_model, val_loader, config, tokenizer_info, device: torch.device):
     ratios = [float(value) for value in config.get("refine_ratios", [0.05, 0.1, 0.2, 0.3])]
     score_name = str(config.get("uncertainty_score", "inverse_confidence"))
+    eval_steps = int(config["eval_steps"])
+    log_every = int(config.get("log_every", 10))
     accumulators: dict[tuple[str, float], dict] = {
         ("gpt2_only", 0.0): new_acc(),
         ("mdlm_only", 1.0): new_acc(),
@@ -293,8 +362,10 @@ def evaluate(gpt2_model, mdlm_model, val_loader, config, tokenizer_info, device:
         accumulators[("gpt2_mdlm_refine", ratio)] = new_acc()
 
     for step, batch in enumerate(val_loader):
-        if step >= int(config["eval_steps"]):
+        if step >= eval_steps:
             break
+        if log_every > 0 and (step == 0 or (step + 1) % log_every == 0):
+            print(f"eval_step={step + 1}/{eval_steps}", flush=True)
         clean = batch.to(device, non_blocking=True)
         valid_mask = clean.ne(int(tokenizer_info.pad_token_id))
 
@@ -308,14 +379,19 @@ def evaluate(gpt2_model, mdlm_model, val_loader, config, tokenizer_info, device:
         uncertainty = uncertainty_from_logits(gpt2_logits, score_name)
         add_gpt2_only_metrics(accumulators[("gpt2_only", 0.0)], gpt2_logits, clean, valid_mask, gpt2_latency)
 
-        full_masked = clean.new_full(clean.shape, int(tokenizer_info.mask_token_id))
-        timesteps = torch.ones((clean.size(0),), device=device)
+        noised, target_mask = mask_tokens(
+            clean,
+            int(tokenizer_info.mask_token_id),
+            int(tokenizer_info.pad_token_id),
+            float(config.get("mask_ratio", 0.15)),
+        )
+        timesteps = torch.full((clean.size(0),), float(config.get("mask_ratio", 0.15)), device=device)
         sync_if_cuda(device)
         mdlm_start = now()
-        mdlm_logits = mdlm_model(full_masked, timesteps)["logits"].float()
+        mdlm_logits = mdlm_model(noised, timesteps)["logits"].float()
         sync_if_cuda(device)
         mdlm_latency = now() - mdlm_start
-        add_mdlm_only_metrics(accumulators[("mdlm_only", 1.0)], mdlm_logits, clean, valid_mask, mdlm_latency)
+        add_mdlm_only_metrics(accumulators[("mdlm_only", 1.0)], mdlm_logits, clean, target_mask, mdlm_latency)
 
         for ratio in ratios:
             uncertainty_mask = select_by_uncertainty(uncertainty, valid_mask, ratio)
@@ -341,6 +417,7 @@ def evaluate(gpt2_model, mdlm_model, val_loader, config, tokenizer_info, device:
     for ratio in ratios:
         rows.append(finalize("random_refine", ratio, accumulators[("random_refine", ratio)]))
         rows.append(finalize("gpt2_mdlm_refine", ratio, accumulators[("gpt2_mdlm_refine", ratio)]))
+    attach_diagnostic_metrics(rows)
     return rows
 
 
@@ -367,39 +444,53 @@ def write_summary(path: Path, rows: list[dict], config: dict, gpt2_source: str) 
     same_ratio_random = next(row for row in random_rows if row["refine_ratio"] == best_refine["refine_ratio"])
     beats_gpt2 = best_refine["top5_acc"] > gpt2["top5_acc"] and best_refine["top1_acc"] > gpt2["top1_acc"]
     beats_random = best_refine["top5_acc"] > same_ratio_random["top5_acc"]
-    close_to_mdlm = (mdlm["top5_acc"] - best_refine["top5_acc"]) <= 0.02
     correction_ok = best_refine["correction_rate"] > best_refine["regression_rate"]
+    standard_top5 = float(mdlm["mdlm_standard_top5"])
+    draft_top5 = float(best_refine["refined_token_top5"])
+    draft_context_hurts = standard_top5 > draft_top5 + 0.05
+    standard_is_weak = standard_top5 < 0.2
 
     lines = [
         "# Diffusion-Assisted Autoregressive Refinement",
         "",
         f"- Device GPT-2: `{gpt2_source}`",
         f"- Edge MDLM: `{config.get('pretrained_edge_path', config.get('edge_model_name_or_path'))}`",
+        f"- Eval steps: `{int(config.get('eval_steps', 0))}`",
+        f"- Mask ratio: `{float(config.get('mask_ratio', 0.15))}`",
         f"- Uncertainty score: `{config.get('uncertainty_score', 'inverse_confidence')}`",
         f"- Refine ratios: `{config.get('refine_ratios', [0.05, 0.1, 0.2, 0.3])}`",
         "",
-        "| Mode | Refine Ratio | Top1 | Top5 | PPL | Correction | Regression | Error Detect Precision | Error Detect Recall | Latency |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Mode | Refine Ratio | Top1 | Top5 | PPL | Correction | Regression | Net Correction | Error Detect Precision | Error Detect Recall | Latency |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
             f"| {row['mode']} | {row['refine_ratio']:.2f} | {row['top1_acc']:.4f} | "
             f"{row['top5_acc']:.4f} | {row['perplexity']:.4f} | {row['correction_rate']:.4f} | "
-            f"{row['regression_rate']:.4f} | {row['error_detection_precision']:.4f} | "
+            f"{row['regression_rate']:.4f} | {row['net_correction']:.4f} | {row['error_detection_precision']:.4f} | "
             f"{row['error_detection_recall']:.4f} | {row['latency']:.4f} |"
         )
     lines.extend(
         [
             "",
+            "## Diagnostics",
+            "",
+            f"- mdlm_standard_top1={mdlm['mdlm_standard_top1']:.6f}",
+            f"- mdlm_standard_top5={mdlm['mdlm_standard_top5']:.6f}",
+            f"- mdlm_draft_context_top1={best_refine['mdlm_draft_context_top1']:.6f}",
+            f"- mdlm_draft_context_top5={best_refine['mdlm_draft_context_top5']:.6f}",
+            f"- best_gpt2_mdlm_refine_ratio={best_refine['refine_ratio']:.2f}",
+            f"- best_gpt2_error_detection_precision={best_refine['gpt2_error_detection_precision']:.6f}",
+            f"- best_gpt2_error_detection_recall={best_refine['gpt2_error_detection_recall']:.6f}",
+            "",
             "## Questions",
             "",
-            f"1. MDLM 是否能有效修正 GPT-2 的低置信 token？{'是' if beats_gpt2 and correction_ok else '否，或证据不足'}。最佳 refine ratio={best_refine['refine_ratio']:.2f}，Top5 gain={best_refine['top5_acc'] - gpt2['top5_acc']:.6f}。",
-            f"2. uncertainty selection 是否优于 random selection？{'是' if beats_random else '否'}。同 ratio 下 Top5 gain={best_refine['top5_acc'] - same_ratio_random['top5_acc']:.6f}。",
-            f"3. 只 refine 少量 token 是否能获得明显质量提升？{'是' if beats_gpt2 else '否'}。最佳 refine 的 estimated compute saved={best_refine['estimated_mdlm_compute_saved']:.4f}。",
-            f"4. 当前方向是否比 GPT-2 assist MDLM 更有希望？{'是' if beats_gpt2 else '暂时还不能证明'}。这个方向至少把强 MDLM 用在弱 GPT-2 的错误位置，建模方向更合理。",
-            f"5. 下一步建议：先优化 error detection，尝试 threshold/gating、校准 GPT-2 confidence、加入 right-context verifier 特征；若离 full MDLM 仍有差距，再训练一个轻量 selector 或 distill MDLM refinement policy。",
-            "",
-            f"Full MDLM Top5={mdlm['top5_acc']:.6f}；最佳 refine Top5={best_refine['top5_acc']:.6f}；是否接近 full MDLM：{'是' if close_to_mdlm else '否'}。",
+            f"1. MDLM-only baseline 为什么异常低？旧逻辑把整段序列全部 mask，并在 full valid sequence 上评估，和 edge_only 的随机 masked recovery 不一致；当前已改为按照 mask_ratio 构造 target_mask，并只在 masked positions 上统计。",
+            f"2. 是 evaluation bug，还是 GPT-2 draft context 导致 MDLM 失效？{'standard masked recovery 仍偏弱，更像 loading/mask/eval 仍需继续查' if standard_is_weak else ('standard recovery 明显强于 draft-context recovery，主要问题是 GPT-2 draft context 误导 MDLM' if draft_context_hurts else '当前诊断未显示 standard 与 draft context 有巨大断层')}。",
+            f"3. eval_steps 从 200 增加到 1000 后，结果是否稳定？本次配置 eval_steps={int(config.get('eval_steps', 0))}；稳定性需和 200-step 旧结果对比，重点看 Top1/Top5 排序是否保持。",
+            f"4. gpt2_mdlm_refine 是否稳定优于 gpt2_only？{'是' if beats_gpt2 else '否，或证据不足'}。最佳 refine Top5 gain={best_refine['top5_acc'] - gpt2['top5_acc']:.6f}，Top1 gain={best_refine['top1_acc'] - gpt2['top1_acc']:.6f}。",
+            f"5. uncertainty selection 是否稳定优于 random refine？{'是' if beats_random else '否'}。同 ratio 下 Top5 gain={best_refine['top5_acc'] - same_ratio_random['top5_acc']:.6f}。",
+            f"6. 下一步是否应该加入 accept gate，而不是直接替换 GPT-2 token？{'是' if not correction_ok else '仍建议加入 gate 做风险控制'}。best correction_rate={best_refine['correction_rate']:.6f}，regression_rate={best_refine['regression_rate']:.6f}，net_correction={best_refine['net_correction']:.6f}。",
         ]
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -416,6 +507,7 @@ def print_table(rows: list[dict]) -> None:
             "PPL": row["perplexity"],
             "Correction": row["correction_rate"],
             "Regression": row["regression_rate"],
+            "Net Correction": row["net_correction"],
             "Error Detect Precision": row["error_detection_precision"],
             "Error Detect Recall": row["error_detection_recall"],
             "Latency": row["latency"],
@@ -433,6 +525,7 @@ def print_table(rows: list[dict]) -> None:
                 "PPL",
                 "Correction",
                 "Regression",
+                "Net Correction",
                 "Error Detect Precision",
                 "Error Detect Recall",
                 "Latency",
@@ -441,20 +534,27 @@ def print_table(rows: list[dict]) -> None:
     )
 
 
-def run(config_path: str, mdlm_ckpt: str | None) -> list[dict]:
+def run(config_path: str, mdlm_ckpt: str | None, eval_steps: int | None = None, save_dir: str | None = None) -> list[dict]:
     config = load_config(config_path)
+    if eval_steps is not None:
+        config["eval_steps"] = int(eval_steps)
+    if save_dir is not None:
+        config["save_dir"] = save_dir
     device = choose_device()
     _, val_loader, tokenizer, tokenizer_info = build_dataloaders(config)
     gpt2_model, gpt2_source = load_gpt2(config, tokenizer, device)
     mdlm_model = load_mdlm(config, tokenizer_info, device, resolve_mdlm_checkpoint(mdlm_ckpt))
+    validate_model_surfaces(mdlm_model, gpt2_model, tokenizer, tokenizer_info, device, int(config["max_length"]))
     rows = evaluate(gpt2_model, mdlm_model, val_loader, config, tokenizer_info, device)
     save_dir = Path(config["save_dir"])
-    save_csv(save_dir / "gpt2_mdlm_refine_eval.csv", rows)
-    save_json(save_dir / "gpt2_mdlm_refine_eval.json", {"benchmark": rows})
-    write_summary(save_dir / "gpt2_mdlm_refine_summary.md", rows, config, gpt2_source)
+    eval_stem = str(config.get("eval_output_stem", "gpt2_mdlm_refine_eval"))
+    summary_name = str(config.get("summary_output_name", "gpt2_mdlm_refine_summary.md"))
+    save_csv(save_dir / f"{eval_stem}.csv", rows)
+    save_json(save_dir / f"{eval_stem}.json", {"benchmark": rows})
+    write_summary(save_dir / summary_name, rows, config, gpt2_source)
     print_table(rows)
-    print(f"saved_refine={save_dir / 'gpt2_mdlm_refine_eval.csv'}")
-    print(f"saved_refine_summary={save_dir / 'gpt2_mdlm_refine_summary.md'}")
+    print(f"saved_refine={save_dir / f'{eval_stem}.csv'}")
+    print(f"saved_refine_summary={save_dir / summary_name}")
     return rows
 
 
@@ -462,8 +562,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--mdlm_ckpt", default=None)
+    parser.add_argument("--eval_steps", type=int, default=None)
+    parser.add_argument("--save_dir", default=None)
     args = parser.parse_args()
-    run(args.config, args.mdlm_ckpt)
+    run(args.config, args.mdlm_ckpt, args.eval_steps, args.save_dir)
 
 
 if __name__ == "__main__":

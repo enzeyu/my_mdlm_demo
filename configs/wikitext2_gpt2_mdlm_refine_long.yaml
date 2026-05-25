@@ -19,9 +19,10 @@ num_workers: 0
 
 max_length: 128
 batch_size: 8
-eval_steps: 200
+eval_steps: 1000
 log_every: 10
 
+mask_ratio: 0.15
 uncertainty_score: inverse_confidence
 refine_ratios: [0.05, 0.1, 0.2, 0.3]
 
@@ -32,4 +33,6 @@ edge_heads: auto
 dropout: 0.1
 precision: bf16
 
-save_dir: results/wikitext2_gpt2_mdlm_refine
+save_dir: results/wikitext2_gpt2_mdlm_refine_long
+eval_output_stem: gpt2_mdlm_refine_eval_long
+summary_output_name: gpt2_mdlm_refine_diagnostic_summary.md
