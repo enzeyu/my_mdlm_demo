@@ -1,0 +1,43 @@
+{
+  "benchmark": [
+    {
+      "Model": "pretrained_mdlm",
+      "Train Noise": "pretrained",
+      "Standard Top1": 0.5191138616572649,
+      "Standard Top5": 0.73675995399529,
+      "Draft Top1": 0.09640115071729315,
+      "Draft Top5": 0.23130560688906246,
+      "Draft PPL": 2484.4637076006447,
+      "Correction": 0.07316151126331473,
+      "Regression": 0.7646276595744681,
+      "Net": -0.6914661483111534
+    },
+    {
+      "Model": "random_mask_lora_mdlm",
+      "Train Noise": "random_mask",
+      "Standard Top1": 0.6372213865718583,
+      "Standard Top5": 0.8110761657322576,
+      "Draft Top1": 0.13166568233344128,
+      "Draft Top5": 0.28512640743774886,
+      "Draft PPL": 478.7520289439803,
+      "Correction": 0.10487224532455691,
+      "Regression": 0.7081117021276596,
+      "Net": -0.6032394568031028
+    },
+    {
+      "Model": "draft_aware_lora_mdlm",
+      "Train Noise": "draft_aware",
+      "Standard Top1": 0.5233146451524682,
+      "Standard Top5": 0.7282647340352797,
+      "Draft Top1": 0.20360456476595096,
+      "Draft Top5": 0.37906990036007543,
+      "Draft PPL": 184.50301900900737,
+      "Correction": 0.17854522004047232,
+      "Regression": 0.6484042553191489,
+      "Net": -0.46985903527867656
+    }
+  ],
+  "eval_config": "configs/wikitext2_draft_aware_lora.yaml",
+  "random_lora_path": "results/wikitext2_random_mask_lora/lora_adapter",
+  "draft_lora_path": "results/wikitext2_draft_aware_lora/lora_adapter"
+}

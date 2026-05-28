@@ -9,14 +9,15 @@ from torch import nn
 FEATURE_NAMES = [
     "gpt2_confidence",
     "gpt2_entropy",
+    "gpt2_margin",
     "mdlm_confidence",
+    "mdlm_entropy",
     "mdlm_margin",
-    "rerank_score_gap",
+    "score_gap",
     "gpt2_mdlm_agree",
-    "gpt2_top1_in_mdlm_topk",
-    "rerank_candidate_rank",
-    "gpt2_candidate_logprob",
-    "mdlm_candidate_logprob",
+    "gpt2_candidate_rank",
+    "refine_ratio",
+    "block_uncertainty",
 ]
 
 
@@ -41,7 +42,7 @@ class AcceptGateMLP(nn.Module):
 def build_gate(config: dict) -> AcceptGateMLP:
     return AcceptGateMLP(
         input_size=len(FEATURE_NAMES),
-        hidden_size=int(config.get("gate_hidden_size", 64)),
+        hidden_size=int(config.get("gate_hidden_dim", config.get("gate_hidden_size", 64))),
         layers=int(config.get("gate_layers", 2)),
     )
 
@@ -63,6 +64,8 @@ def candidate_rerank_features(
     candidate_top_k: int,
     lambda_gpt2: float,
     lambda_mdlm: float,
+    refine_ratio: float | None = None,
+    block_uncertainty: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Compute reranked candidates, gate features, and supervised labels."""
     gpt2_padded = pad_gpt2_logits(gpt2_logits, mdlm_logits.size(-1))
@@ -73,11 +76,13 @@ def candidate_rerank_features(
     gpt2_probs = torch.softmax(gpt2_padded.float(), dim=-1)
     mdlm_probs = torch.softmax(mdlm_logits.float(), dim=-1)
 
+    gpt2_top2 = gpt2_probs.topk(2, dim=-1)
     gpt2_top = gpt2_probs.max(dim=-1)
     mdlm_top2 = mdlm_probs.topk(2, dim=-1)
-    mdlm_topk_ids = mdlm_probs.topk(min(top_k, mdlm_probs.size(-1)), dim=-1).indices
     entropy_denom = max(float(torch.log(torch.tensor(float(gpt2_logits.size(-1)), device=gpt2_logits.device)).item()), 1.0)
     gpt2_entropy = -(gpt2_probs * gpt2_log_probs).sum(dim=-1) / entropy_denom
+    mdlm_entropy_denom = max(float(torch.log(torch.tensor(float(mdlm_logits.size(-1)), device=mdlm_logits.device)).item()), 1.0)
+    mdlm_entropy = -(mdlm_probs * mdlm_log_probs).sum(dim=-1) / mdlm_entropy_denom
 
     candidate_ids = gpt2_padded.topk(top_k, dim=-1).indices
     cand_gpt2 = gpt2_log_probs.gather(-1, candidate_ids)
@@ -92,20 +97,22 @@ def candidate_rerank_features(
     chosen_gpt2_logprob = cand_gpt2.gather(-1, best_rank).squeeze(-1)
     chosen_mdlm_logprob = cand_mdlm.gather(-1, best_rank).squeeze(-1)
     gpt2_pred = gpt2_top.indices
-    gpt2_in_mdlm_topk = mdlm_topk_ids.eq(gpt2_pred.unsqueeze(-1)).any(dim=-1).float()
+    ratio_feature = torch.full_like(gpt2_top.values, float(refine_ratio if refine_ratio is not None else 0.0))
+    uncertainty_feature = block_uncertainty.float() if block_uncertainty is not None else gpt2_entropy
 
     features = torch.stack(
         [
             gpt2_top.values,
             gpt2_entropy,
+            gpt2_top2.values[..., 0] - gpt2_top2.values[..., 1],
             mdlm_top2.values[..., 0],
+            mdlm_entropy,
             mdlm_top2.values[..., 0] - mdlm_top2.values[..., 1],
-            score_gap,
+            chosen_mdlm_logprob - chosen_gpt2_logprob,
             gpt2_pred.eq(rerank_token).float(),
-            gpt2_in_mdlm_topk,
             rerank_rank_norm,
-            chosen_gpt2_logprob,
-            chosen_mdlm_logprob,
+            ratio_feature,
+            uncertainty_feature,
         ],
         dim=-1,
     )

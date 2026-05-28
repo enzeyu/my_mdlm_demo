@@ -1,263 +1,314 @@
-# Diffusion-Assisted Autoregressive Refinement
+# Draft-aware LoRA Fine-tuning for MDLM
 
-This repository currently evaluates one idea:
+本项目用于验证一个核心假设：
 
-> Use a local GPT-2 small model as the device-side autoregressive draft model,
-> use a local pretrained MDLM masked diffusion model as the edge-side verifier,
-> rerank GPT-2 top-k candidates at low-confidence positions, and train a small
-> learned accept gate to decide whether to accept each reranked correction.
+端侧 GPT-2 生成的 draft context 可以作为一种结构化训练噪声源，用 LoRA 微调边侧 pretrained MDLM 后，MDLM 会更擅长在 GPT-2 draft context 中恢复真实 clean tokens，并进一步提升 GPT-2 draft refinement。
 
-The current experiment does not require any local MDLM training checkpoint. By
-default it loads the local pretrained MDLM directly from:
+当前实验不训练 GPT-2，不全量训练 MDLM，也不依赖额外 MDLM checkpoint。所有实验都直接加载本地 pretrained MDLM，然后只训练 LoRA 或 accept gate。
 
-```text
-/mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
-```
+## 1. 本地模型路径
 
-## Local Assets
-
-Keep Hugging Face assets under `/mnt/data/enzeyu/hf_downloads`:
-
-- Models: `/mnt/data/enzeyu/hf_downloads/models`
-- Datasets: `/mnt/data/enzeyu/hf_downloads/datasets`
-
-Expected local models:
+需要确认以下路径存在：
 
 ```text
 /mnt/data/enzeyu/hf_downloads/models/gpt2
 /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
 ```
 
-The evaluation config sets:
+配置中默认使用：
 
 ```yaml
 tokenizer_name: /mnt/data/enzeyu/hf_downloads/models/gpt2
-dataset_cache_dir: /mnt/data/enzeyu/hf_downloads/datasets
-hf_local_files_only: true
 device_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/gpt2
 edge_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
 pretrained_edge_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
 mdlm_ckpt: null
 ```
 
-## Files
+## 2. 推荐验证顺序
 
-- `train_refine_gate.py`: trains only the learned accept gate MLP. GPT-2 and
-  MDLM are frozen.
-- `eval_refine_gate.py`: evaluates GPT-2-only, MDLM-only, random refine,
-  candidate rerank without gate, rule gate, and learned gate.
-- `refine_gate.py`: learned gate module plus candidate rerank feature extraction.
-- `refine_utils.py`: shared loading, tokenizer compatibility, uncertainty
-  selection, and metric helpers for the current learned-gate path.
-- `configs/wikitext2_gpt2_mdlm_learned_gate.yaml`: current GPT-2 + pretrained
-  MDLM + learned gate config.
-- `data_real.py`: tokenizer, WikiText loading, fixed-length blocks, and masked
-  token corruption.
-- `models_mdlm_wrapper.py`: local/Hugging Face MDLM edge verifier loader.
-- `metrics.py`: table formatting and small metric helpers.
-- `validate_pretrained_mdlm.py`: optional smoke test for the local MDLM.
+建议按下面顺序跑：
 
-## Current Experiment
+1. 训练 random-mask LoRA baseline
+2. 训练 draft-aware LoRA
+3. 比较两种 LoRA 训练噪声
+4. 做 block-size ablation
+5. 训练 accept gate
+6. 评估最终 GPT-2 + LoRA-MDLM + gate
+7. 生成总报告
 
-The current path is:
+## 3. 训练 random-mask LoRA baseline
 
-```text
-GPT-2 draft
--> select low-confidence positions by inverse GPT-2 confidence
--> take GPT-2 top-k candidates
--> mask selected draft positions
--> score candidates with MDLM
--> rerank candidates inside GPT-2 top-k only
--> learned accept gate chooses rerank token or original GPT-2 token
+这个 baseline 对应传统 MDLM 风格训练：
+
+clean context + random mask -> 恢复被随机 mask 的 clean tokens。
+
+运行：
+
+```bash
+python train_draft_aware_lora.py \
+  --config configs/wikitext2_random_mask_lora.yaml
 ```
 
-Fixed defaults:
+输出目录：
+
+```text
+results/wikitext2_random_mask_lora/
+```
+
+关键输出：
+
+```text
+results/wikitext2_random_mask_lora/lora_adapter/
+results/wikitext2_random_mask_lora/train_metrics.csv
+results/wikitext2_random_mask_lora/eval_metrics.csv
+```
+
+## 4. 训练 draft-aware LoRA
+
+这是当前方法：
+
+GPT-2 draft context + uncertain block mask -> 恢复 GPT-2 低置信 block 中的真实 clean tokens。
+
+运行：
+
+```bash
+python train_draft_aware_lora.py \
+  --config configs/wikitext2_draft_aware_lora.yaml
+```
+
+输出目录：
+
+```text
+results/wikitext2_draft_aware_lora/
+```
+
+关键输出：
+
+```text
+results/wikitext2_draft_aware_lora/lora_adapter/
+results/wikitext2_draft_aware_lora/train_metrics.csv
+results/wikitext2_draft_aware_lora/eval_metrics.csv
+```
+
+## 5. 比较 random-mask LoRA 和 draft-aware LoRA
+
+两种 LoRA 都训练完成后运行：
+
+```bash
+python run_lora_training_mode_comparison.py \
+  --eval_config configs/wikitext2_draft_aware_lora.yaml
+```
+
+输出目录：
+
+```text
+results/lora_training_mode_comparison/
+```
+
+重点看：
+
+```text
+results/lora_training_mode_comparison/training_mode_comparison_summary.md
+```
+
+核心指标：
+
+```text
+Draft Top1
+Draft Top5
+Correction
+Regression
+Net
+```
+
+判断标准：
+
+如果 `draft_aware_lora_mdlm` 的 `Draft Top1` / `Draft Top5` 明显高于 `random_mask_lora_mdlm`，说明 GPT-2 draft context 作为结构化训练噪声源是有效的。
+
+## 6. Block-size ablation
+
+用于比较 token-level 和 block-level draft-aware training。
+
+运行：
+
+```bash
+python run_block_size_ablation.py \
+  --base_config configs/wikitext2_draft_aware_lora.yaml \
+  --block_sizes 1 2 4 8
+```
+
+输出目录：
+
+```text
+results/block_size_ablation/
+```
+
+重点看：
+
+```text
+results/block_size_ablation/block_size_ablation_summary.md
+```
+
+核心问题：
+
+1. `block_size=4` 是否优于 `block_size=1`
+2. block-level training 是否缓解 GPT-2 draft context 对 MDLM 的误导
+3. `block_size=8` 是否因为 block 太大导致任务变难
+4. 当前最优 block size 是多少
+
+## 7. 训练 accept gate
+
+如果 LoRA-MDLM 无条件替换 GPT-2 token，可能 correction 增加，但 regression 也很高。accept gate 的目标是只接受有收益的 MDLM refinement。
+
+运行：
+
+```bash
+python train_accept_gate.py \
+  --config configs/wikitext2_accept_gate.yaml
+```
+
+输出：
+
+```text
+results/accept_gate/learned_gate.pt
+results/accept_gate/accept_gate_train_metrics.csv
+results/accept_gate/accept_gate_train_metrics.json
+```
+
+训练目标使用 utility-aware weighted BCE：
 
 ```yaml
-refine_window: 0
-refine_ratios: [0.2, 0.3]
-refine_ratio: 0.3
-refinement_method: candidate_rerank
-candidate_top_k: 20
-lambda_gpt2: 0.5
-lambda_mdlm: 0.5
-accept_threshold: 0.5
-gate_hidden_size: 64
-gate_layers: 2
-gate_lr: 0.0003
+positive_weight: 1.0
+negative_weight: 3.0
 ```
 
-The learned gate uses these features:
+也就是更重惩罚 harmful regression。
 
-```text
-gpt2_confidence, gpt2_entropy, mdlm_confidence, mdlm_margin,
-rerank_score_gap, gpt2_mdlm_agree, gpt2_top1_in_mdlm_topk,
-rerank_candidate_rank, gpt2_candidate_logprob, mdlm_candidate_logprob
-```
+## 8. 评估 accept gate 和最终系统
 
-Training labels are supervised from ground truth only where GPT-2 and rerank
-disagree in correctness:
-
-```text
-accept_label = 1 if rerank is correct and GPT-2 is wrong
-accept_label = 0 if GPT-2 is correct and rerank is wrong
-```
-
-GPT-2 and MDLM are never trained by this script.
-
-## Evaluation Modes
-
-`eval_refine_gate.py` reports:
-
-- `gpt2_only`: GPT-2 predicts each masked position from left context only.
-- `mdlm_only`: pretrained MDLM masked-token recovery baseline.
-- `random_refine`: random position selection baseline.
-- `candidate_rerank_no_gate`: GPT-2 top-k candidates are reranked with MDLM
-  scores and always accepted.
-- `candidate_rerank_rule_gate`: original threshold-based rule gate.
-- `candidate_rerank_learned_gate`: learned MLP gate.
-
-The evaluation table includes:
-
-```text
-mode,refine_ratio,candidate_top_k,top1,top5,ppl,correction_rate,regression_rate,net_correction,accepted_ratio,gate_accuracy,error_detection_precision,error_detection_recall,candidate_coverage,latency,tokens_per_sec
-```
-
-## Run Current Idea
-
-Use the learned-gate config:
+运行：
 
 ```bash
-configs/wikitext2_gpt2_mdlm_learned_gate.yaml
+python eval_accept_gate.py \
+  --config configs/wikitext2_accept_gate.yaml
 ```
 
-### 1. Quick Sanity Check
+输出：
 
-Run a tiny gate training pass:
-
-```bash
-python train_refine_gate.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml \
-  --train_steps 2
+```text
+results/accept_gate/accept_gate_eval.csv
+results/accept_gate/accept_gate_eval.json
+results/accept_gate/accept_gate_summary.md
+results/accept_gate/accept_gate_best_config.json
 ```
 
-Then run a tiny evaluation:
+重点比较这些模式：
+
+```text
+gpt2_only
+pretrained_mdlm_refine
+random_mask_lora_refine
+draft_aware_lora_refine_no_gate
+draft_aware_lora_refine_with_rule_gate
+draft_aware_lora_refine_with_learned_gate
+```
+
+最终目标：
+
+```text
+draft_aware_lora_refine_with_learned_gate 的 Top1 / Top5 > gpt2_only
+draft_aware_lora_refine_with_learned_gate 的 regression_rate < draft_aware_lora_refine_no_gate
+draft_aware_lora_refine_with_learned_gate 的 net_correction 接近 0 或转正
+```
+
+## 9. 生成总报告
+
+前三组实验跑完后运行：
 
 ```bash
-python eval_refine_gate.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml \
-  --gate_ckpt results/wikitext2_gpt2_mdlm_learned_gate/learned_gate.pt \
+python analyze_draft_aware_lora_results.py
+```
+
+输出：
+
+```text
+results/draft_aware_lora_final_report.md
+```
+
+报告会汇总：
+
+1. random-mask LoRA vs draft-aware LoRA
+2. block-size ablation
+3. accept gate 是否降低 regression
+4. 最终 GPT-2 + draft-aware LoRA-MDLM + gate 是否超过 GPT-2-only
+
+## 10. 指标解释
+
+`Standard Top1 / Standard Top5`：
+MDLM 在标准 random mask context 下恢复 token 的准确率。
+
+`Draft Top1 / Draft Top5`：
+MDLM 在 GPT-2 draft context 下恢复被 mask token 的准确率。这是验证 draft-aware LoRA 的核心指标。
+
+`PPL`：
+在评估 token 上的 perplexity，越低越好。
+
+`Correction`：
+GPT-2 原本预测错，MDLM refinement 后预测对的比例。
+
+`Regression`：
+GPT-2 原本预测对，MDLM refinement 后改错的比例。
+
+`Net`：
+
+```text
+Correction - Regression
+```
+
+越高越好。当前阶段如果能接近 0 或转正，说明 refinement 不再明显伤害 GPT-2。
+
+`Selected Ratio`：
+被选择进入 MDLM refinement 的 token 比例。
+
+`Accepted Ratio`：
+gate 最终接受 MDLM refinement 的比例。
+
+`Gate Accuracy`：
+gate 在 correction / regression utility label 上的判断准确率。
+
+## 11. 快速 sanity check
+
+如果只是确认脚本能启动，可以临时跑很小步数：
+
+```bash
+python train_draft_aware_lora.py \
+  --config configs/wikitext2_random_mask_lora.yaml \
+  --train_steps 1
+```
+
+```bash
+python train_draft_aware_lora.py \
+  --config configs/wikitext2_draft_aware_lora.yaml \
+  --train_steps 1
+```
+
+```bash
+python eval_accept_gate.py \
+  --config configs/wikitext2_accept_gate.yaml \
   --eval_steps 1
 ```
 
-Expected logs include:
+正式验证时不要使用这些小步数结果作为结论。
 
-```text
-Loaded edge MDLM from pretrained path
-Loaded device GPT-2 from pretrained path
-No MDLM checkpoint provided; using pretrained edge model only
-```
+## 12. 当前最重要的结论判断
 
-### 2. Full Learned-Gate Training
+验证方法是否成立，主要看三件事：
 
-```bash
-python train_refine_gate.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml
-```
+1. draft-aware LoRA 是否在 GPT-2 draft context 下优于 random-mask LoRA
+2. block-level draft-aware training 是否优于 token-level training
+3. accept gate 是否降低 regression，并让最终系统超过 GPT-2-only
 
-This writes:
+如果这三点同时成立，就能支持：
 
-```text
-results/wikitext2_gpt2_mdlm_learned_gate/learned_gate.pt
-results/wikitext2_gpt2_mdlm_learned_gate/gate_train_metrics.csv
-results/wikitext2_gpt2_mdlm_learned_gate/gate_train_metrics.json
-results/wikitext2_gpt2_mdlm_learned_gate/best_gate_config.json
-```
-
-### 3. Full Evaluation
-
-```bash
-python eval_refine_gate.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml \
-  --gate_ckpt results/wikitext2_gpt2_mdlm_learned_gate/learned_gate.pt
-```
-
-This writes:
-
-```text
-results/wikitext2_gpt2_mdlm_learned_gate/learned_gate_eval.csv
-results/wikitext2_gpt2_mdlm_learned_gate/learned_gate_eval.json
-results/wikitext2_gpt2_mdlm_learned_gate/learned_gate_summary.md
-```
-
-Read `learned_gate_summary.md` first. It answers:
-
-```text
-1. learned gate 是否降低 regression？
-2. learned gate 是否保持或提升 Top1/Top5？
-3. learned gate 是否优于 rule-based gate？
-4. learned gate 是否优于 no-gate candidate rerank？
-5. candidate coverage 是否足够？
-6. 当前结果是否支持“端侧 GPT-2 draft + 边侧 MDLM verifier/refiner”的研究假设？
-```
-
-### 4. Candidate Top-k Follow-up
-
-Start with `candidate_top_k: 20`. If `candidate_coverage` is low, test top-k 50
-without changing the research direction:
-
-```bash
-python train_refine_gate.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml
-```
-
-after editing:
-
-```yaml
-candidate_top_k: 50
-save_dir: results/wikitext2_gpt2_mdlm_learned_gate_top50
-```
-
-then evaluate:
-
-```bash
-python eval_refine_gate.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml \
-  --gate_ckpt results/wikitext2_gpt2_mdlm_learned_gate_top50/learned_gate.pt
-```
-
-Keep `refine_window: 0`.
-
-Optional MDLM smoke test:
-
-```bash
-python validate_pretrained_mdlm.py \
-  --config configs/wikitext2_gpt2_mdlm_learned_gate.yaml \
-  --forward-check
-```
-
-`--mdlm_ckpt` is optional and should only be passed when an extra MDLM checkpoint
-exists. The current learned-gate experiment does not require it.
-
-## Outputs
-
-Current learned-gate results are written to:
-
-```text
-results/wikitext2_gpt2_mdlm_learned_gate/
-```
-
-Files:
-
-- `gate_train_metrics.csv`
-- `gate_train_metrics.json`
-- `learned_gate_eval.csv`
-- `learned_gate_eval.json`
-- `learned_gate_summary.md`
-- `learned_gate.pt`
-- `best_gate_config.json`
-
-The summary states that this round uses the local pretrained MDLM without an
-extra training checkpoint, reports the current learned-gate result, and answers
-whether the results support edge-side MDLM verification/refinement of
-device-side GPT-2 drafts.
+端侧 AR draft 可以作为扩散语言模型训练噪声源，提升边侧 MDLM 对端侧草稿上下文的修正能力。

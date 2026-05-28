@@ -155,12 +155,31 @@ class HFMDLMEdgeAdapter(nn.Module):
         self.mask_token_id = mask_token_id
         self.fallback_hidden = nn.Linear(vocab_size, hidden_size)
 
+    def _input_vocab_size(self) -> int:
+        backbone = getattr(self.model, "backbone", None)
+        vocab_embed = getattr(backbone, "vocab_embed", None)
+        weight = getattr(vocab_embed, "embedding", None)
+        if isinstance(weight, nn.Parameter):
+            return int(weight.size(0))
+        if isinstance(vocab_embed, nn.Embedding):
+            return int(vocab_embed.weight.size(0))
+        return int(self.vocab_size)
+
     def forward(
         self,
         input_ids: torch.Tensor,
         timesteps: torch.Tensor,
         conditioning: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        vocab_size = self._input_vocab_size()
+        if input_ids.numel() > 0:
+            min_id = int(input_ids.min().item())
+            max_id = int(input_ids.max().item())
+            if min_id < 0 or max_id >= vocab_size:
+                raise ValueError(
+                    "MDLM input_ids out of range before embedding: "
+                    f"min={min_id} max={max_id} vocab_size={vocab_size}"
+                )
         kwargs: dict[str, Any] = {
             "input_ids": input_ids,
             "timesteps": timesteps,
@@ -258,6 +277,23 @@ def _patch_mdlm_rotary_kernel(model: nn.Module) -> bool:
     if getattr(module.apply_rotary_pos_emb, "__name__", "") == _safe_apply_rotary_pos_emb.__name__:
         return False
     module.apply_rotary_pos_emb = _safe_apply_rotary_pos_emb
+    return True
+
+
+def _patch_mdlm_embedding_layer(model: nn.Module) -> bool:
+    """Patch MDLM's custom embedding layer away from CUDA advanced indexing."""
+    module = sys.modules.get(model.__class__.__module__)
+    embedding_cls = getattr(module, "EmbeddingLayer", None) if module is not None else None
+    if embedding_cls is None:
+        return False
+    current_forward = getattr(embedding_cls, "forward", None)
+    if getattr(current_forward, "__name__", "") == "_safe_mdlm_embedding_forward":
+        return False
+
+    def _safe_mdlm_embedding_forward(self, x):
+        return F.embedding(x, self.embedding)
+
+    embedding_cls.forward = _safe_mdlm_embedding_forward
     return True
 
 
@@ -455,10 +491,15 @@ def try_load_pretrained_mdlm(
         resize_message = _resize_pretrained_mdlm_vocab(model, vocab_size, mask_token_id, pad_token_id)
         _assert_pretrained_mdlm_vocab(model, vocab_size, mask_token_id)
         rotary_message = "patched flash-attn rotary kernel" if _patch_mdlm_rotary_kernel(model) else "rotary kernel already safe"
+        embedding_message = (
+            "patched MDLM embedding indexing"
+            if _patch_mdlm_embedding_layer(model)
+            else "MDLM embedding indexing already safe"
+        )
         hidden_size = _config_get(hf_config, "hidden_size", "hidden_dim", "d_model", "n_embd", default=768)
         message = (
             f"loaded pretrained edge MDLM from {model_name} via HF_ENDPOINT={os.environ.get('HF_ENDPOINT')}; "
-            f"{resize_message}; {rotary_message}"
+            f"{resize_message}; {rotary_message}; {embedding_message}"
         )
         return HFMDLMEdgeAdapter(model, hidden_size, vocab_size, mask_token_id), hidden_size, message
     except Exception as exc:  # noqa: BLE001 - this is intentionally best effort.

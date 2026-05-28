@@ -1,0 +1,16 @@
+{
+  "mode": "draft_aware_lora_refine_with_learned_gate",
+  "gate_threshold": 0.3,
+  "top1": 0.3171281789095227,
+  "top5": 0.510443810403404,
+  "ppl": 65.79373693696908,
+  "correction_rate": 0.14792412550868375,
+  "regression_rate": 0.19002659574468084,
+  "net_correction": -0.042102470235997086,
+  "accepted_ratio": 0.87473565889996,
+  "gate_accuracy": 0.8083615555296041,
+  "selected_token_ratio": 0.21641735659860803,
+  "latency": 0.028310249334041783,
+  "tokens_per_sec": 17885.331867566892,
+  "gate_ckpt": "results/accept_gate/learned_gate.pt"
+}
