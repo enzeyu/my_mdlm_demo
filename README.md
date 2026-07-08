@@ -195,3 +195,15 @@ trainable modules: LoRA / draft adapter + accept gate
 4. 当前 `block_size=1` 是最佳设置，大 block 不适合作为主配置。
 5. Learned accept gate 可以降低把 GPT-2 正确 token 改错的 regression。
 6. 完整系统相较 GPT-2-only 有稳定提升，说明边缘 MDLM refinement 对设备端草稿有实际增益。
+
+## 论文化前最需要解决的问题
+
+当前最大问题不是实验不够多，而是最终提升幅度还偏小：`GPT-2-only` Top1 为 `0.2956`，完整系统约 `0.3160`，绝对提升只有约 `+2.0%`。如果要写成论文，优先目标应该是把这个提升做大，而不是先补很多外围实验。
+
+下一步重点：
+
+1. 优先提高 correction，同时控制 regression：改进低置信 token selector、refine ratio 和 accept gate，让 MDLM 少改对的 token、多修错的 token。
+2. 重点调 `block_size=1` 下的主配置：更长训练、更合适 LoRA rank / learning rate / refine ratio，而不是继续投入大 block。
+3. 做 confidence / entropy 分桶分析，找出 GPT-2 哪些错误最容易被 MDLM 修正，再把 selector 对准这些位置。
+4. 如果提升仍然小，尝试更强的 draft-aware 训练目标或更强的 draft/refine 模型组合；否则论文主张会比较弱。
+5. 只有当最终提升明显扩大后，再补多 seed、更多数据集、效率指标和完整消融。
