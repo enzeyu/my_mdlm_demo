@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import csv
-import json
 from pathlib import Path
 
 import yaml
 
 from eval_final_refinement import evaluate
 from draft_utils import load_config
+from metrics import write_csv, write_json
 from train_draft_aware_lora import train
 
 
@@ -26,20 +25,6 @@ COLUMNS = [
     "latency",
     "tokens_per_sec",
 ]
-
-
-def save_csv(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row.get(key, "") for key in COLUMNS})
-
-
-def save_json(path: Path, payload) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def write_summary(path: Path, rows: list[dict]) -> None:
@@ -125,8 +110,8 @@ def run(base_config: str, block_sizes: list[int], train_steps: int | None, eval_
         train(str(config_path))
         eval_rows = evaluate(config, None)
         rows.append(summarize_eval(int(block_size), eval_rows))
-        save_csv(out_dir / "block_size_ablation.csv", rows)
-        save_json(out_dir / "block_size_ablation.json", {"benchmark": rows})
+        write_csv(out_dir / "block_size_ablation.csv", rows, COLUMNS)
+        write_json(out_dir / "block_size_ablation.json", {"benchmark": rows})
         write_summary(out_dir / "block_size_ablation_summary.md", rows)
     return rows
 

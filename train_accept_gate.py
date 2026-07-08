@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 from itertools import cycle
 from pathlib import Path
@@ -25,22 +24,7 @@ from draft_utils import (
     uncertainty_from_logits,
     validate_model_surfaces,
 )
-from metrics import now, sync_if_cuda
-
-
-def save_csv(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    keys = sorted({key for row in rows for key in row}) if rows else ["step"]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=keys)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row.get(key, "") for key in keys})
-
-
-def save_json(path: Path, payload) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+from metrics import now, sync_if_cuda, write_csv, write_json
 
 
 def load_lora_mdlm(config: dict, tokenizer_info, device: torch.device, lora_path: str):
@@ -196,10 +180,10 @@ def train(config_path: str, train_steps: int | None = None) -> list[dict]:
         "draft_aware_lora_path": lora_path,
         "config": config,
     }
-    save_csv(save_dir / "accept_gate_train_metrics.csv", metrics)
-    save_json(save_dir / "accept_gate_train_metrics.json", {"train": metrics, "summary": summary})
+    write_csv(save_dir / "accept_gate_train_metrics.csv", metrics)
+    write_json(save_dir / "accept_gate_train_metrics.json", {"train": metrics, "summary": summary})
     torch.save({"model_state": gate.state_dict(), "config": config, "feature_names": FEATURE_NAMES, "summary": summary}, save_dir / "learned_gate.pt")
-    save_json(
+    write_json(
         save_dir / "accept_gate_best_config.json",
         {
             "refine_ratio": ratio,

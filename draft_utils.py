@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 import torch
 from torch import nn
-import torch.nn.functional as F
 import yaml
 
-from metrics import sync_if_cuda, now
 from models_mdlm_wrapper import build_edge_mdlm_model
 
 
@@ -74,10 +71,6 @@ def load_config(path: str) -> dict:
 
 def choose_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def resolve_mdlm_checkpoint(path: str | None) -> Path | None:
-    return Path(path) if path else None
 
 
 def check_tokenizer_compatibility(mdlm_tokenizer, gpt2_tokenizer, gpt2_vocab_size: int) -> None:
@@ -285,74 +278,3 @@ def load_gate_checkpoint(path: str, config: dict, device: torch.device) -> Accep
     gate.load_state_dict(state)
     gate.eval()
     return gate
-
-
-def select_by_uncertainty(uncertainty: torch.Tensor, valid_mask: torch.Tensor, ratio: float) -> torch.Tensor:
-    selected = torch.zeros_like(valid_mask)
-    coords = valid_mask.nonzero(as_tuple=False)
-    count = int(coords.size(0))
-    if count == 0 or ratio <= 0.0:
-        return selected
-    k = min(count, max(1, int(math.ceil(count * ratio))))
-    chosen = uncertainty[valid_mask].topk(k, largest=True).indices
-    chosen_coords = coords[chosen]
-    selected[chosen_coords[:, 0], chosen_coords[:, 1]] = True
-    return selected
-
-
-def select_random(valid_mask: torch.Tensor, ratio: float) -> torch.Tensor:
-    selected = torch.zeros_like(valid_mask)
-    coords = valid_mask.nonzero(as_tuple=False)
-    count = int(coords.size(0))
-    if count == 0 or ratio <= 0.0:
-        return selected
-    k = min(count, max(1, int(math.ceil(count * ratio))))
-    chosen = torch.randperm(count, device=valid_mask.device)[:k]
-    chosen_coords = coords[chosen]
-    selected[chosen_coords[:, 0], chosen_coords[:, 1]] = True
-    return selected
-
-
-def expand_refine_window(refine_mask: torch.Tensor, valid_mask: torch.Tensor, window: int) -> torch.Tensor:
-    if window <= 0 or not refine_mask.any():
-        return refine_mask & valid_mask
-    expanded = refine_mask.clone()
-    for offset in range(1, window + 1):
-        expanded[:, offset:] |= refine_mask[:, :-offset]
-        expanded[:, :-offset] |= refine_mask[:, offset:]
-    return expanded & valid_mask
-
-
-def add_logits_metrics(acc: dict, logits: torch.Tensor, labels: torch.Tensor, mask: torch.Tensor) -> None:
-    if not mask.any():
-        return
-    selected_logits = logits[mask]
-    selected_labels = labels[mask]
-    vocab = selected_logits.size(-1)
-    loss = F.cross_entropy(selected_logits.view(-1, vocab), selected_labels.view(-1), reduction="sum")
-    top1 = selected_logits.argmax(dim=-1)
-    top5 = selected_logits.topk(min(5, vocab), dim=-1).indices.eq(selected_labels.unsqueeze(-1)).any(dim=-1)
-    acc["loss_sum"] += float(loss.item())
-    acc["top1_sum"] += int(top1.eq(selected_labels).sum().item())
-    acc["top5_sum"] += int(top5.sum().item())
-    acc["tokens"] += int(selected_labels.numel())
-
-
-def add_gpt2_only_metrics(acc: dict, gpt2_logits: torch.Tensor, labels: torch.Tensor, valid_mask: torch.Tensor, latency: float) -> None:
-    add_logits_metrics(acc, gpt2_logits, labels, valid_mask)
-    gpt2_pred = gpt2_logits.argmax(dim=-1)
-    acc["gpt2_errors"] += int((~gpt2_pred.eq(labels) & valid_mask).sum().item())
-    acc["latency"] += latency
-    acc["batches"] += 1
-
-
-def add_mdlm_only_metrics(acc: dict, mdlm_logits: torch.Tensor, labels: torch.Tensor, valid_mask: torch.Tensor, latency: float) -> None:
-    top1_before = acc["top1_sum"]
-    top5_before = acc["top5_sum"]
-    tokens_before = acc["tokens"]
-    add_logits_metrics(acc, mdlm_logits, labels, valid_mask)
-    acc["refined_top1_sum"] += acc["top1_sum"] - top1_before
-    acc["refined_top5_sum"] += acc["top5_sum"] - top5_before
-    acc["refined_tokens"] += acc["tokens"] - tokens_before
-    acc["latency"] += latency
-    acc["batches"] += 1

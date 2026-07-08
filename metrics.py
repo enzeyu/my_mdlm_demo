@@ -6,7 +6,7 @@ import csv
 import json
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Any, Dict, Iterable, List
 
 import torch
 
@@ -43,14 +43,14 @@ def append_jsonl(path: str | Path, row: Dict) -> None:
         handle.write(json.dumps(row) + "\n")
 
 
-def write_json(path: str | Path, rows: List[Dict]) -> None:
-    """Write a list of metric rows as formatted JSON."""
+def write_json(path: str | Path, payload: Any) -> None:
+    """Write a JSON payload with stable formatting."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def write_csv(path: str | Path, rows: Iterable[Dict]) -> None:
+def write_csv(path: str | Path, rows: Iterable[Dict], columns: List[str] | None = None) -> None:
     """Write metric rows to CSV using the union of all observed keys."""
     rows = list(rows)
     path = Path(path)
@@ -58,7 +58,7 @@ def write_csv(path: str | Path, rows: Iterable[Dict]) -> None:
     if not rows:
         path.write_text("", encoding="utf-8")
         return
-    keys = sorted({key for row in rows for key in row})
+    keys = columns or sorted({key for row in rows for key in row})
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=keys)
         writer.writeheader()

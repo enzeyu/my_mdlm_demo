@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
-import json
 from itertools import cycle
 from pathlib import Path
 
@@ -21,7 +19,7 @@ from lora_utils import (
     save_lora_adapter,
     trainable_parameter_report,
 )
-from metrics import gpu_memory_mb, now, reset_gpu_memory, sync_if_cuda
+from metrics import gpu_memory_mb, now, reset_gpu_memory, sync_if_cuda, write_csv, write_json
 from draft_utils import (
     choose_device,
     gpt2_teacher_forced_logits,
@@ -31,21 +29,6 @@ from draft_utils import (
     uncertainty_from_logits,
     validate_model_surfaces,
 )
-
-
-def save_csv(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    keys = sorted({key for row in rows for key in row}) if rows else ["step"]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=keys)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row.get(key, "") for key in keys})
-
-
-def save_json(path: Path, payload) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 @torch.no_grad()
@@ -275,10 +258,10 @@ def train(config_path: str, train_steps: int | None = None) -> list[dict]:
                 eval_row = {"step": step, **eval_draft_context(mdlm_model, gpt2_model, val_loader, config, tokenizer_info, device, max_eval_batches)}
                 eval_rows.append(eval_row)
                 print("eval " + " ".join(f"{key}={value}" for key, value in eval_row.items()), flush=True)
-                save_csv(save_dir / "train_metrics.csv", train_rows)
-                save_json(save_dir / "train_metrics.json", {"train": train_rows})
-                save_csv(save_dir / "eval_metrics.csv", eval_rows)
-                save_json(save_dir / "eval_metrics.json", {"eval": eval_rows})
+                write_csv(save_dir / "train_metrics.csv", train_rows)
+                write_json(save_dir / "train_metrics.json", {"train": train_rows})
+                write_csv(save_dir / "eval_metrics.csv", eval_rows)
+                write_json(save_dir / "eval_metrics.json", {"eval": eval_rows})
     except torch.cuda.OutOfMemoryError as exc:
         print("CUDA OOM: lower batch_size or max_length in the YAML config and resume.", flush=True)
         raise exc
@@ -293,11 +276,11 @@ def train(config_path: str, train_steps: int | None = None) -> list[dict]:
         "base_edge_model": config.get("pretrained_edge_path", config.get("edge_model_name_or_path")),
     }
     save_lora_adapter(mdlm_model, save_dir / "lora_adapter", metadata)
-    save_csv(save_dir / "train_metrics.csv", train_rows)
-    save_json(save_dir / "train_metrics.json", {"train": train_rows, "lora": metadata})
-    save_csv(save_dir / "eval_metrics.csv", eval_rows)
-    save_json(save_dir / "eval_metrics.json", {"eval": eval_rows})
-    save_json(save_dir / "best_config.json", config)
+    write_csv(save_dir / "train_metrics.csv", train_rows)
+    write_json(save_dir / "train_metrics.json", {"train": train_rows, "lora": metadata})
+    write_csv(save_dir / "eval_metrics.csv", eval_rows)
+    write_json(save_dir / "eval_metrics.json", {"eval": eval_rows})
+    write_json(save_dir / "best_config.json", config)
     write_summary(save_dir / "draft_aware_lora_summary.md", config, param_report, targets, train_rows, eval_rows)
     print(f"saved_lora_adapter={save_dir / 'lora_adapter'}", flush=True)
     return train_rows

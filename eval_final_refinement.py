@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import gc
-import json
 import math
 from pathlib import Path
 
@@ -14,7 +12,7 @@ import torch.nn.functional as F
 
 from data_real import build_dataloaders
 from lora_utils import freeze_module, select_uncertain_blocks
-from metrics import format_table, now, sync_if_cuda
+from metrics import format_table, now, sync_if_cuda, write_csv, write_json
 from draft_utils import (
     candidate_rerank_features,
     choose_device,
@@ -325,20 +323,6 @@ def evaluate(config: dict, gate_ckpt: str | None) -> list[dict]:
     return rows
 
 
-def save_csv(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row.get(column, "") for column in COLUMNS})
-
-
-def save_json(path: Path, payload) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
 def write_summary(path: Path, rows: list[dict], best: dict | None) -> None:
     by_mode = {row["mode"]: row for row in rows if row["mode"] != "draft_aware_lora_refine_with_learned_gate"}
     gpt2 = by_mode.get("gpt2_only")
@@ -407,10 +391,10 @@ def run(config_path: str, gate_ckpt: str | None, eval_steps: int | None = None, 
     rows = evaluate(config, gate_ckpt)
     best = choose_best_learned(rows)
     out_dir = Path(config["save_dir"])
-    save_csv(out_dir / "final_eval.csv", rows)
-    save_json(out_dir / "final_eval.json", {"benchmark": rows})
+    write_csv(out_dir / "final_eval.csv", rows, COLUMNS)
+    write_json(out_dir / "final_eval.json", {"benchmark": rows})
     if best is not None:
-        save_json(out_dir / "accept_gate_best_config.json", {**best, "gate_ckpt": gate_ckpt})
+        write_json(out_dir / "accept_gate_best_config.json", {**best, "gate_ckpt": gate_ckpt})
     write_summary(out_dir / "final_summary.md", rows, best)
     print(format_table(rows, COLUMNS))
     print(f"saved_final_eval={out_dir / 'final_eval.csv'}")
