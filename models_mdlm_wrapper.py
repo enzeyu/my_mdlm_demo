@@ -1,4 +1,4 @@
-"""MDLM-style backend for AR-guided edge verification experiments.
+"""MDLM backend wrapper for DART edge refinement.
 
 This module keeps the project self-contained while supporting three edge cases:
 
@@ -50,6 +50,13 @@ class MDLMBackendConfig:
     use_pretrained_edge: bool = False
     require_pretrained_edge: bool = False
     hf_local_files_only: bool = False
+    use_draft_conditioning: bool = False
+    use_risk_embedding: bool = True
+    use_confidence_embedding: bool = True
+    use_token_type_embedding: bool = True
+    use_draft_adapter: bool = False
+    adapter_bottleneck: int = 64
+    freeze_mdlm_backbone: bool = False
 
 
 class TimestepEmbedder(nn.Module):
@@ -142,6 +149,68 @@ class MDLMStyleDenoiser(nn.Module):
         if self.mask_token_id < logits.size(-1):
             logits[..., self.mask_token_id] = -1e4
         return logits, hidden
+
+
+class DraftAwareAdapter(nn.Module):
+    """Small bottleneck adapter for draft-aware MDLM adaptation."""
+
+    def __init__(self, hidden_size: int, bottleneck: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(hidden_size, int(bottleneck)),
+            nn.GELU(),
+            nn.Linear(int(bottleneck), hidden_size),
+        )
+
+    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+        return self.net(hidden)
+
+
+class DraftConditioner(nn.Module):
+    """Optional conditioning from AR draft confidence and risk features."""
+
+    def __init__(
+        self,
+        hidden_size: int,
+        use_risk: bool = True,
+        use_confidence: bool = True,
+        use_token_type: bool = True,
+    ):
+        super().__init__()
+        self.use_risk = bool(use_risk)
+        self.use_confidence = bool(use_confidence)
+        self.use_token_type = bool(use_token_type)
+        self.risk_mlp = nn.Sequential(nn.Linear(1, hidden_size), nn.GELU(), nn.Linear(hidden_size, hidden_size))
+        self.conf_mlp = nn.Sequential(nn.Linear(3, hidden_size), nn.GELU(), nn.Linear(hidden_size, hidden_size))
+        self.type_embed = nn.Embedding(3, hidden_size)
+
+    def forward(
+        self,
+        risk_scores: torch.Tensor | None = None,
+        token_confidence: torch.Tensor | None = None,
+        token_entropy: torch.Tensor | None = None,
+        token_margin: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor | None:
+        pieces: list[torch.Tensor] = []
+        if self.use_risk and risk_scores is not None:
+            pieces.append(self.risk_mlp(risk_scores.float().unsqueeze(-1)))
+        if (
+            self.use_confidence
+            and token_confidence is not None
+            and token_entropy is not None
+            and token_margin is not None
+        ):
+            features = torch.stack(
+                [token_confidence.float(), token_entropy.float(), token_margin.float()],
+                dim=-1,
+            )
+            pieces.append(self.conf_mlp(features))
+        if self.use_token_type and token_type_ids is not None:
+            pieces.append(self.type_embed(token_type_ids.clamp(min=0, max=2).long()))
+        if not pieces:
+            return None
+        return torch.stack(pieces, dim=0).sum(dim=0)
 
 
 class HFMDLMEdgeAdapter(nn.Module):
@@ -552,9 +621,54 @@ class EdgeMDLMModel(nn.Module):
 
         self.edge_hidden_size = edge_hidden
         self.edge_model = edge_model
+        self.use_draft_conditioning = bool(config.use_draft_conditioning)
+        self.use_draft_adapter = bool(config.use_draft_adapter)
+        self.freeze_mdlm_backbone = bool(config.freeze_mdlm_backbone)
+        self.conditioner = (
+            DraftConditioner(
+                edge_hidden,
+                use_risk=bool(config.use_risk_embedding),
+                use_confidence=bool(config.use_confidence_embedding),
+                use_token_type=bool(config.use_token_type_embedding),
+            )
+            if self.use_draft_conditioning
+            else None
+        )
+        self.draft_adapter = (
+            DraftAwareAdapter(edge_hidden, int(config.adapter_bottleneck))
+            if self.use_draft_adapter
+            else None
+        )
+        self.adapter_lm_head = nn.Linear(edge_hidden, config.vocab_size, bias=False) if self.use_draft_adapter else None
+        if self.adapter_lm_head is not None:
+            nn.init.zeros_(self.adapter_lm_head.weight)
+        if self.freeze_mdlm_backbone:
+            self.edge_model.requires_grad_(False)
 
-    def forward(self, input_ids: torch.Tensor, timesteps: torch.Tensor):
-        edge_logits, edge_hidden = self.edge_model(input_ids, timesteps, conditioning=None)
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        timesteps: torch.Tensor,
+        risk_scores: torch.Tensor | None = None,
+        token_confidence: torch.Tensor | None = None,
+        token_entropy: torch.Tensor | None = None,
+        token_margin: torch.Tensor | None = None,
+        token_type_ids: torch.Tensor | None = None,
+    ):
+        conditioning = None
+        if self.conditioner is not None:
+            conditioning = self.conditioner(
+                risk_scores=risk_scores,
+                token_confidence=token_confidence,
+                token_entropy=token_entropy,
+                token_margin=token_margin,
+                token_type_ids=token_type_ids,
+            )
+        edge_logits, edge_hidden = self.edge_model(input_ids, timesteps, conditioning=conditioning)
+        if self.draft_adapter is not None and self.adapter_lm_head is not None:
+            adapter_input = edge_hidden + conditioning if conditioning is not None else edge_hidden
+            adapted_hidden = adapter_input + self.draft_adapter(adapter_input)
+            edge_logits = edge_logits + self.adapter_lm_head(adapted_hidden)
         return {"logits": edge_logits, "edge_hidden": edge_hidden}
 
 
@@ -582,6 +696,13 @@ def build_edge_mdlm_model(config: dict, vocab_size: int, pad_token_id: int, mask
         use_pretrained_edge=bool(config.get("use_pretrained_edge", False)),
         require_pretrained_edge=bool(config.get("require_pretrained_edge", False)),
         hf_local_files_only=bool(config.get("hf_local_files_only", False)),
+        use_draft_conditioning=bool(config.get("use_draft_conditioning", False)),
+        use_risk_embedding=bool(config.get("use_risk_embedding", True)),
+        use_confidence_embedding=bool(config.get("use_confidence_embedding", True)),
+        use_token_type_embedding=bool(config.get("use_token_type_embedding", True)),
+        use_draft_adapter=bool(config.get("use_draft_adapter", False)),
+        adapter_bottleneck=int(config.get("adapter_bottleneck", 64)),
+        freeze_mdlm_backbone=bool(config.get("freeze_mdlm_backbone", False)),
     )
     return EdgeMDLMModel(cfg)
 

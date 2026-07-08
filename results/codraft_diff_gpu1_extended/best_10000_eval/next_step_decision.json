@@ -1,0 +1,19 @@
+{
+  "checkpoint": "results/codraft_diff_gpu1_extended/long_train/checkpoints_10000/draft_refine_adapter/checkpoint.pt",
+  "best_method": "error_aware_adapter_gate",
+  "best_ratio": 0.2,
+  "best_selector_profile": "all_features",
+  "best_gate_threshold": "",
+  "best_final_acc": 0.3327377544372273,
+  "best_wrong_edit_rate": 0.03617722924217194,
+  "best_correction_precision": 0.20875286611504337,
+  "previous_3000_best_final_acc": 0.3243,
+  "improvement_over_3000_best": 0.00843775443722733,
+  "oracle_final_acc": 0.32936171052891355,
+  "oracle_gap": -0.003376043908313753,
+  "recommend_30000": true,
+  "recommendation": "Start 30000-step training.",
+  "priorities": [
+    "gate"
+  ]
+}

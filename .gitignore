@@ -1,9 +1,52 @@
+# Python/cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local agent/editor state
+.agents/
+.codex/
+.vscode/
+.idea/
+
+# Environments and local secrets
+.env
+.venv/
+venv/
+env/
+
+# Model weights and training checkpoints
 *.pt
 *.pth
 *.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.msgpack
+*.h5
 results/**/checkpoint.pt
 results/**/checkpoints/
-__pycache__
-.agents
-.codex
+results/**/lora_adapter/
+results/**/adapter_model.*
 
+# Large/local data and downloaded models
+data/
+datasets/
+checkpoints/
+models/
+hf_downloads/
+wandb/
+runs/
+logs/
+
+# Temporary files
+*.tmp
+*.log
+*.out
+*.err
+.DS_Store
+
+# Keep lightweight experiment artifacts such as CSV/JSON/PNG/MD under results/.

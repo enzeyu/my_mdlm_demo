@@ -12,9 +12,11 @@ import torch
 import torch.nn.functional as F
 
 from data_real import build_dataloaders
-from draft_aware_lora_utils import DEFAULT_LORA_TARGETS, freeze_module, inject_lora, load_lora_adapter, select_uncertain_blocks
-from refine_gate import FEATURE_NAMES, build_gate, candidate_rerank_features
-from refine_utils import (
+from lora_utils import DEFAULT_LORA_TARGETS, freeze_module, inject_lora, load_lora_adapter, select_uncertain_blocks
+from draft_utils import (
+    FEATURE_NAMES,
+    build_gate,
+    candidate_rerank_features,
     choose_device,
     gpt2_teacher_forced_logits,
     load_config,
@@ -67,7 +69,7 @@ def train(config_path: str, train_steps: int | None = None) -> list[dict]:
     config["mdlm_ckpt"] = None
     lora_path = str(config.get("draft_aware_lora_path", "results/wikitext2_draft_aware_lora/lora_adapter"))
     ratio = float(config.get("refine_ratio", 0.2))
-    block_size = int(config.get("block_size", 4))
+    block_size = int(config.get("block_size", 1))
     top_k = int(config.get("candidate_top_k", 20))
     lambda_gpt2 = float(config.get("lambda_gpt2", 0.5))
     lambda_mdlm = float(config.get("lambda_mdlm", 0.5))
@@ -122,7 +124,7 @@ def train(config_path: str, train_steps: int | None = None) -> list[dict]:
                 lambda_gpt2,
                 lambda_mdlm,
                 refine_ratio=ratio,
-                block_uncertainty=uncertainty,
+                selected_token_uncertainty=uncertainty,
             )
             trainable_mask = feat["trainable_mask"]
 

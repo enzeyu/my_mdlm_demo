@@ -1,4 +1,4 @@
-"""Metric helpers for the real PyTorch coarse-to-fine prototype."""
+"""Metric helpers for DART training and evaluation."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Real dataset and tokenizer utilities for coarse-to-fine diffusion LM training."""
+"""Dataset and tokenizer utilities for DART LoRA training."""
 
 from __future__ import annotations
 
@@ -95,6 +95,7 @@ def _load_local_wikitext_parquet(config_name: str, cache_dir: str | None):
 
     from datasets import load_dataset
 
+    cache_path = Path(cache_dir) if cache_dir else Path("/tmp")
     return load_dataset(
         "parquet",
         data_files=data_files,
@@ -178,7 +179,6 @@ def build_dataloaders(config: Dict) -> Tuple[DataLoader, DataLoader, object, Tok
     """Build tokenizer plus train/validation dataloaders from the YAML config."""
     dataset_cache_dir = config.get("dataset_cache_dir", "/mnt/data/enzeyu/hf_downloads/datasets")
     os.environ.setdefault("HF_DATASETS_CACHE", str(dataset_cache_dir))
-    # 加载tokenizer 和 训练、验证文本, 切成固定长度的块
     tokenizer = load_tokenizer(
         config["tokenizer_name"],
         local_files_only=bool(config.get("hf_local_files_only", False)),
@@ -209,7 +209,6 @@ def build_dataloaders(config: Dict) -> Tuple[DataLoader, DataLoader, object, Tok
         num_workers=int(config.get("num_workers", 2)),
         pin_memory=True,
     )
-    # 打包分词器信息
     info = TokenizerInfo(
         vocab_size=len(tokenizer),
         pad_token_id=int(tokenizer.pad_token_id),

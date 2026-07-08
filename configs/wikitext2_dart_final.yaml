@@ -1,0 +1,33 @@
+seed: 7
+
+dataset_name: wikitext-2
+tokenizer_name: /mnt/data/enzeyu/hf_downloads/models/gpt2
+
+device_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/gpt2
+edge_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
+
+max_length: 128
+batch_size: 4
+gradient_accumulation_steps: 4
+
+train_steps: 10000
+eval_steps: 1000
+
+lora_training_mode: draft_aware
+block_size: 1
+refine_ratio: 0.2
+uncertainty_score: inverse_confidence
+
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.05
+
+use_accept_gate: true
+gate_threshold: 0.4
+gate_hidden_dim: 64
+gate_train_steps: 10000
+gate_lr: 0.0001
+positive_weight: 1.0
+negative_weight: 3.0
+
+save_dir: results/dart_final

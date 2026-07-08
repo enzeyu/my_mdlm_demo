@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 
 from data_real import build_dataloaders
-from draft_aware_lora_utils import (
+from lora_utils import (
     DEFAULT_LORA_TARGETS,
     build_draft_aware_inputs,
     build_random_mask_lora_inputs,
@@ -22,7 +22,7 @@ from draft_aware_lora_utils import (
     trainable_parameter_report,
 )
 from metrics import gpu_memory_mb, now, reset_gpu_memory, sync_if_cuda
-from refine_utils import (
+from draft_utils import (
     choose_device,
     gpt2_teacher_forced_logits,
     load_config,
@@ -57,7 +57,7 @@ def eval_draft_context(model, gpt2_model, val_loader, config, tokenizer_info, de
     selected_tokens = 0
     total_tokens = 0
     score_name = str(config.get("uncertainty_score", "inverse_confidence"))
-    block_size = int(config.get("block_size", 4))
+    block_size = int(config.get("block_size", 1))
     refine_ratio = float(config.get("refine_ratio", 0.2))
     mask_ratio = float(config.get("mask_ratio", 0.15))
     mode = str(config.get("lora_training_mode", "draft_aware"))
@@ -124,7 +124,7 @@ def write_summary(path: Path, config: dict, param_report: dict, targets: list[st
         f"- Device GPT-2: `{config.get('device_model_name_or_path')}`",
         f"- Edge MDLM: `{config.get('pretrained_edge_path', config.get('edge_model_name_or_path'))}`",
         f"- train_steps: `{int(config.get('train_steps', 10000))}`",
-        f"- block_size: `{int(config.get('block_size', 4))}`",
+        f"- block_size: `{int(config.get('block_size', 1))}`",
         f"- refine_ratio: `{float(config.get('refine_ratio', 0.2))}`",
         f"- LoRA rank/alpha/dropout: `{config.get('lora_r', 8)}/{config.get('lora_alpha', 16)}/{config.get('lora_dropout', 0.05)}`",
         f"- total_parameters: `{param_report['total_parameters']}`",
@@ -144,7 +144,7 @@ def write_summary(path: Path, config: dict, param_report: dict, targets: list[st
         f"- eval_token_acc: `{last_eval.get('token_acc', '')}`",
         f"- eval_top5_acc: `{last_eval.get('top5_acc', '')}`",
         "",
-        "Run `eval_draft_aware_lora.py` for the full pretrained-vs-LoRA refinement comparison.",
+        "Run `eval_final_refinement.py` for the final GPT-2 + LoRA-MDLM refinement comparison.",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -196,7 +196,7 @@ def train(config_path: str, train_steps: int | None = None) -> list[dict]:
     log_interval = int(config.get("log_interval", config.get("log_every", 100)))
     eval_interval = int(config.get("eval_interval", config.get("eval_steps", 1000)))
     max_eval_batches = int(config.get("eval_batches", min(20, int(config.get("eval_steps", 1000)))))
-    block_size = int(config.get("block_size", 4))
+    block_size = int(config.get("block_size", 1))
     refine_ratio = float(config.get("refine_ratio", 0.2))
     mask_ratio = float(config.get("mask_ratio", 0.15))
     score_name = str(config.get("uncertainty_score", "inverse_confidence"))

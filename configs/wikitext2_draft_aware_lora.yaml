@@ -8,10 +8,6 @@ trust_remote_code: true
 
 device_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/gpt2
 edge_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
-pretrained_edge_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
-use_pretrained_edge: true
-require_pretrained_edge: true
-mdlm_ckpt: null
 
 max_train_examples: 100000000
 max_val_examples: 100000000
@@ -22,6 +18,7 @@ num_workers: 0
 max_length: 128
 batch_size: 4
 gradient_accumulation_steps: 4
+
 train_steps: 10000
 eval_steps: 1000
 eval_interval: 1000
@@ -31,14 +28,11 @@ eval_batches: 20
 lr: 0.0001
 weight_decay: 0.01
 grad_clip: 0.5
-precision: fp32
 
-draft_source: gpt2
 lora_training_mode: draft_aware
-uncertainty_score: inverse_confidence
+block_size: 1
 refine_ratio: 0.2
-block_size: 4
-block_selection: top_uncertain
+uncertainty_score: inverse_confidence
 mask_ratio: 0.15
 
 lora_r: 8

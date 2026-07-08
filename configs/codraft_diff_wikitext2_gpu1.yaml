@@ -1,0 +1,71 @@
+experiment_name: codraft_diff_gpu1
+dataset: wikitext-2
+dataset_cache_dir: /mnt/data/enzeyu/hf_downloads/datasets
+tokenizer_name: /mnt/data/enzeyu/hf_downloads/models/gpt2
+hf_local_files_only: true
+trust_remote_code: true
+
+max_length: 128
+max_train_examples: 100000000
+max_val_examples: 100000000
+max_train_blocks: 100000000
+max_val_blocks: 100000000
+num_workers: 0
+
+device_ar:
+  model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/gpt2
+  model_type: gpt2
+  dropout: 0.1
+
+edge_mdlm:
+  model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
+  hidden_size: auto
+  num_layers: auto
+  num_heads: auto
+  dropout: 0.1
+  use_draft_conditioning: true
+  use_risk_embedding: true
+  use_confidence_embedding: true
+  use_token_type_embedding: true
+  use_draft_adapter: true
+  adapter_bottleneck: 64
+  freeze_mdlm_backbone: true
+
+draft:
+  max_new_tokens: 64
+  temperature: 1.0
+  top_k: 50
+
+risk:
+  confidence_threshold: 0.5
+  entropy_threshold: 3.0
+  margin_threshold: 0.1
+  expand_window: 1
+  min_span_len: 1
+
+accept_gate:
+  accept_margin: 0.1
+  accept_conf_threshold: 0.6
+  risk_accept_threshold: 0.5
+
+training:
+  batch_size: 4
+  lr: 0.0003
+  adapter_lr: 0.0001
+  max_steps: 3000
+  log_every: 100
+  eval_every: 500
+  save_every: 1500
+
+loss_weights:
+  draft_refine_loss: 1.0
+  confidence_calibration: 0.1
+  refine_ratio_budget: 0.01
+
+mask_ratio: 0.15
+refine_ratio: 0.2
+weight_decay: 0.01
+grad_clip: 0.5
+eval_steps: 200
+eval_batches: 20
+save_dir: results/codraft_diff_gpu1

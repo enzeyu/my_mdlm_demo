@@ -8,10 +8,6 @@ trust_remote_code: true
 
 device_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/gpt2
 edge_model_name_or_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
-pretrained_edge_path: /mnt/data/enzeyu/hf_downloads/models/mdlm-no_flashattn-fp32-owt
-use_pretrained_edge: true
-require_pretrained_edge: true
-mdlm_ckpt: null
 
 draft_aware_lora_path: results/wikitext2_draft_aware_lora/lora_adapter
 random_mask_lora_path: results/wikitext2_random_mask_lora/lora_adapter
@@ -25,34 +21,28 @@ num_workers: 0
 max_length: 128
 batch_size: 4
 gradient_accumulation_steps: 4
+
 train_steps: 10000
 eval_steps: 1000
 eval_interval: 1000
 log_interval: 100
-precision: fp32
 
-uncertainty_score: inverse_confidence
+block_size: 1
 refine_ratio: 0.2
-block_size: 4
-mask_ratio: 0.15
-
+uncertainty_score: inverse_confidence
 candidate_top_k: 20
 lambda_gpt2: 0.5
 lambda_mdlm: 0.5
 
 use_accept_gate: true
+gate_threshold: 0.4
+gate_thresholds: [0.4]
 gate_hidden_dim: 64
 gate_layers: 2
 gate_train_steps: 10000
 gate_lr: 0.0001
-gate_threshold: 0.5
-gate_thresholds: [0.3, 0.4, 0.5, 0.6, 0.7]
 positive_weight: 1.0
 negative_weight: 3.0
-
-tau_gpt2: 0.5
-tau_mdlm: 0.4
-tau_margin: 0.05
 
 lora_r: 8
 lora_alpha: 16

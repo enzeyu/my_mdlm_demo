@@ -9,8 +9,8 @@ from pathlib import Path
 
 import yaml
 
-from eval_draft_aware_lora import evaluate
-from refine_utils import load_config
+from eval_final_refinement import evaluate
+from draft_utils import load_config
 from train_draft_aware_lora import train
 
 
@@ -19,13 +19,12 @@ COLUMNS = [
     "Draft Top1",
     "Draft Top5",
     "PPL",
-    "Block EM",
     "Correction",
     "Regression",
     "Net",
     "Selected Ratio",
     "latency",
-    "gpu_memory_MB",
+    "tokens_per_sec",
 ]
 
 
@@ -46,7 +45,7 @@ def save_json(path: Path, payload) -> None:
 def write_summary(path: Path, rows: list[dict]) -> None:
     by_block = {int(row["Block Size"]): row for row in rows}
     token = by_block.get(1)
-    best = max(rows, key=lambda row: (row["Draft Top1"], row["Net"], row["Block EM"])) if rows else None
+    best = max(rows, key=lambda row: (row["Draft Top1"], row["Net"])) if rows else None
     block4 = by_block.get(4)
     largest = by_block.get(max(by_block)) if by_block else None
     block4_beats_token = bool(token and block4 and block4["Draft Top1"] > token["Draft Top1"])
@@ -56,13 +55,13 @@ def write_summary(path: Path, rows: list[dict]) -> None:
     lines = [
         "# Block-size Ablation",
         "",
-        "| Block Size | Draft Top1 | Draft Top5 | PPL | Block EM | Correction | Regression | Net | Selected Ratio |",
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Block Size | Draft Top1 | Draft Top5 | PPL | Correction | Regression | Net | Selected Ratio |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
             f"| {int(row['Block Size'])} | {row['Draft Top1']:.4f} | {row['Draft Top5']:.4f} | "
-            f"{row['PPL']:.4f} | {row['Block EM']:.4f} | {row['Correction']:.4f} | "
+            f"{row['PPL']:.4f} | {row['Correction']:.4f} | "
             f"{row['Regression']:.4f} | {row['Net']:.4f} | {row['Selected Ratio']:.4f} |"
         )
     lines.extend(
@@ -70,9 +69,9 @@ def write_summary(path: Path, rows: list[dict]) -> None:
             "",
             "## Answers",
             "",
-            f"1. block_size=4 是否优于 token-level block_size=1？{'是' if block4_beats_token else '否或证据不足'}。",
-            f"2. block-level training 是否缓解 GPT-2 draft context 对 MDLM 的误导？{'是' if block_training_helps else '否或证据不足'}。",
-            f"3. block_size 过大是否导致任务变难？{'是' if too_large_hurts else '否或证据不足'}。",
+            f"1. block_size=1 当前效果最好：{'是' if best and int(best['Block Size']) == 1 else '否或证据不足'}。",
+            f"2. 固定大 block 不适合作为主配置：{'是' if not block4_beats_token or too_large_hurts else '否或证据不足'}。",
+            "3. 当前最终方法默认使用 token-level draft-aware LoRA。",
             f"4. 当前最优 block_size 是多少？`{int(best['Block Size']) if best else ''}`。",
         ]
     )
@@ -87,20 +86,18 @@ def write_config(path: Path, config: dict) -> None:
 
 def summarize_eval(block_size: int, rows: list[dict]) -> dict:
     by_mode = {row["mode"]: row for row in rows}
-    draft = by_mode["lora_mdlm_draft_context"]
-    refine = by_mode["gpt2_plus_lora_mdlm_refine"]
+    refine = by_mode["draft_aware_lora_refine_no_gate"]
     return {
         "Block Size": int(block_size),
-        "Draft Top1": draft["draft_context_top1"],
-        "Draft Top5": draft["draft_context_top5"],
-        "PPL": draft["ppl"],
-        "Block EM": draft["block_exact_match"],
+        "Draft Top1": refine["top1"],
+        "Draft Top5": refine["top5"],
+        "PPL": refine["ppl"],
         "Correction": refine["correction_rate"],
         "Regression": refine["regression_rate"],
         "Net": refine["net_correction"],
-        "Selected Ratio": draft["selected_token_ratio"],
-        "latency": draft["latency"],
-        "gpu_memory_MB": max(float(draft["gpu_memory_MB"]), float(refine["gpu_memory_MB"])),
+        "Selected Ratio": refine["selected_token_ratio"],
+        "latency": refine["latency"],
+        "tokens_per_sec": refine["tokens_per_sec"],
     }
 
 
@@ -115,6 +112,8 @@ def run(base_config: str, block_sizes: list[int], train_steps: int | None, eval_
         config = dict(base)
         config["block_size"] = int(block_size)
         config["save_dir"] = str(run_dir)
+        config["draft_aware_lora_path"] = str(run_dir / "lora_adapter")
+        config["use_accept_gate"] = False
         if train_steps is not None:
             config["train_steps"] = int(train_steps)
         if eval_steps is not None:
@@ -124,7 +123,7 @@ def run(base_config: str, block_sizes: list[int], train_steps: int | None, eval_
         write_config(config_path, config)
         print(f"training_block_size={block_size} config={config_path}", flush=True)
         train(str(config_path))
-        eval_rows = evaluate(config, str(run_dir / "lora_adapter"))
+        eval_rows = evaluate(config, None)
         rows.append(summarize_eval(int(block_size), eval_rows))
         save_csv(out_dir / "block_size_ablation.csv", rows)
         save_json(out_dir / "block_size_ablation.json", {"benchmark": rows})
